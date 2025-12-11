@@ -8,7 +8,8 @@ from functools import lru_cache
 from typing import Any, Dict, Optional
 
 from src.utils.logger import logger
-from src.utils.persistent_cache import get_cache_backend
+from src.utils.persistent_cache import get_cache_backend, MemoryCache
+from src.utils.redis_client import is_redis_enabled
 
 # FASE C: Cache persistente con múltiples backends
 _cache_backend = None
@@ -19,7 +20,11 @@ def _get_cache() -> Any:
     """Obtiene la instancia del backend de cache (lazy initialization)."""
     global _cache_backend
     if _cache_backend is None:
-        _cache_backend = get_cache_backend()
+        # Respetar bandera para deshabilitar Redis aunque REDIS_URL esté presente
+        if not is_redis_enabled() and os.getenv("CACHE_BACKEND", "").lower() == "redis":
+            _cache_backend = MemoryCache()
+        else:
+            _cache_backend = get_cache_backend()
     return _cache_backend
 
 

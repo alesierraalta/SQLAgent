@@ -399,7 +399,8 @@ def get_cache_backend() -> CacheBackend:
     Returns:
         Instancia de CacheBackend
     """
-    backend_type = os.getenv("CACHE_BACKEND", "memory").lower()
+    backend_default = "redis" if os.getenv("REDIS_URL") else "memory"
+    backend_type = os.getenv("CACHE_BACKEND", backend_default).lower()
     
     if backend_type == "file":
         cache_dir = os.getenv("CACHE_DIR")

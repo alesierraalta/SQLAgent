@@ -51,6 +51,7 @@
 - Modo lectura: conexiones configuradas como read-only por defecto.
 - Cache semántico: `ENABLE_SEMANTIC_CACHE` (`true/false`).
 - Modelos: `OPENAI_MODEL`, `FAST_MODEL`, `COMPLEX_MODEL`.
+- Redis/cache distribuido: `USE_REDIS_CACHE=true`, `CACHE_BACKEND=redis`, `REDIS_URL=redis://localhost:6379/0` (ver sección Docker).
 
 ## 6) Notas de seguridad/validación
 - Solo se permite un statement; no se aceptan `;` extra ni comentarios (`--`, `/* */`).
@@ -61,3 +62,9 @@
 - Conexión: `python -m src.cli test-connection`; verifica `DATABASE_URL`.
 - Sin resultados esperados: ajusta rango de fechas en la consulta; revisa que la tabla `sales` tenga datos recientes.
 - Si el agente genera SQL bloqueado, simplifica la petición o usa consultas directas como las de los ejemplos avanzados (una sola sentencia, sin comentarios).
+
+## 8) Cache con Redis (Docker) para menor latencia
+- Levantar Redis: `docker compose up -d redis`.
+- Entorno local: `set CACHE_BACKEND=redis`, `set USE_REDIS_CACHE=true`, `set REDIS_URL=redis://localhost:6379/0`.
+- Efecto: cache SQL y semántico persisten entre sesiones; hits reducen llamadas a LLM/DB.
+- Chat CLI: usa `/clearcache` para limpiar; repite un prompt para ver `cache=sql` o `cache=semantic` en la metadata.
