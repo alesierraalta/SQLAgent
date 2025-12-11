@@ -18,7 +18,7 @@ def test_import_database_module():
 
 
 @patch("src.utils.database.create_engine")
-@patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:pass@localhost/db"})
+@patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:pass@localhost/db", "QUERY_TIMEOUT": "30"})
 def test_get_db_engine_success(mock_create_engine):
     """Test: Obtención exitosa del engine."""
     mock_engine = MagicMock()
@@ -28,6 +28,9 @@ def test_get_db_engine_success(mock_create_engine):
 
     assert engine == mock_engine
     mock_create_engine.assert_called_once()
+    kwargs = mock_create_engine.call_args.kwargs
+    assert "-c statement_timeout=30000" in kwargs["connect_args"]["options"]
+    assert "default_transaction_read_only=on" in kwargs["connect_args"]["options"]
 
 
 @patch.dict(os.environ, {}, clear=True)
@@ -59,3 +62,12 @@ def test_test_connection_failure(mock_get_engine):
     result = db_test_connection()
 
     assert result is False
+
+
+@patch("src.utils.database.create_engine")
+@patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:pass@localhost/db"})
+def test_get_db_engine_connection_error(mock_create_engine):
+    """Test: Error al crear engine propaga DatabaseConnectionError."""
+    mock_create_engine.side_effect = Exception("bad url")
+    with pytest.raises(DatabaseConnectionError):
+        get_db_engine()

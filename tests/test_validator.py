@@ -253,3 +253,32 @@ def test_date_functions_allowed(validator):
     ]
     for sql in sqls:
         validator.validate_query(sql)
+
+
+def test_parse_error(monkeypatch, validator):
+    """Test: parse de sqlglot lanza error."""
+    monkeypatch.setattr("sqlglot.parse", lambda *args, **kwargs: (_ for _ in ()).throw(Exception("parse fail")))
+    with pytest.raises(SQLValidationError):
+        validator.validate_query("SELECT * FROM sales")
+
+
+def test_empty_parse(monkeypatch, validator):
+    """Test: sqlglot.parse retorna lista vacía."""
+    monkeypatch.setattr("sqlglot.parse", lambda *args, **kwargs: [])
+    with pytest.raises(SQLValidationError):
+        validator.validate_query("SELECT * FROM sales")
+
+
+def test_non_select_expression(validator):
+    """Test: expresión no select_like debe fallar."""
+    with pytest.raises(DangerousCommandError):
+        validator.validate_query("VALUES (1)")
+
+
+def test_is_dangerous_command_parse_fail(monkeypatch, validator):
+    monkeypatch.setattr("sqlglot.parse", lambda *args, **kwargs: (_ for _ in ()).throw(Exception("parse fail")))
+    assert validator.is_dangerous_command("bad sql") is True
+
+
+def test_is_dangerous_command_multi_statement(validator):
+    assert validator.is_dangerous_command("SELECT 1; SELECT 2")
