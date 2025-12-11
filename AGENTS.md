@@ -11,6 +11,7 @@
 - Run natural-language queries: `python -m src.cli query "Top 10 productos por ventas" --limit 10 --verbose`.
 - Inspect schema: `python -m src.cli schema`. Validate SQL manually: `python -m src.cli validate-sql "SELECT * FROM sales"`.
 - Connectivity check: `python -m src.cli test-connection`.
+- Chat mode: `python -m src.cli_chat --mode safe` (comandos `/config`, `/schema`, `/history`, `/clearcache`, `/exit`; autocompletado con Tab).
 
 ## Coding Style & Naming
 - Python 3.8+, 4-space indentation, type hints everywhere; keep functions small and side-effect aware.
@@ -32,4 +33,5 @@
 ## Security & Configuration
 - Never commit secrets; copy `.env.example` to `.env` and set `OPENAI_API_KEY`, `DATABASE_URL`, and model/env tuning flags (`OPENAI_MODEL`, `QUERY_TIMEOUT`, `CACHE_TTL_SECONDS`, `SCHEMA_DISCOVERY`, etc.).
 - Prefer read-only DB roles; validators block mutating SQL—keep tests against disposable data.
-- For performance toggles (`USE_FAST_MODEL`, `ENABLE_SEMANTIC_CACHE`), document defaults when altering behavior.
+- For performance toggles (`USE_FAST_MODEL`, `ENABLE_SEMANTIC_CACHE`, `USE_REDIS_CACHE`, `SCHEMA_MAX_TABLES`), document defaults when altering behavior.
+- Embeddings/cache: `EMBEDDING_MODEL` (default `all-MiniLM-L6-v2`), semantic cache habilitado por defecto con TTL (`CACHE_TTL_SECONDS`), y subset de schema dinámico limitado por `SCHEMA_MAX_TABLES` para reducir tokens. Si hay Redis, puedes habilitar `USE_REDIS_CACHE=true` para cache distribuido (embeddings/resultados).

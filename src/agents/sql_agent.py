@@ -27,6 +27,41 @@ from src.validators.sql_validator import SQLValidator
 load_dotenv()
 
 
+def _select_candidate_tables(schema: DatabaseSchema, question: str, max_tables: int = 5) -> list[str]:
+    """
+    Selecciona tablas candidatas basadas en coincidencias simples con la pregunta para reducir tokens.
+    """
+    q = question.lower()
+    scores = []
+    for name, table in schema.tables.items():
+        score = 0
+        lname = name.lower()
+        if lname in q:
+            score += 3
+        if any(tok and tok in lname for tok in q.replace("?", "").replace(",", " ").split()):
+            score += 1
+        if table.description and any(tok in table.description.lower() for tok in q.split()):
+            score += 1
+        if score > 0:
+            scores.append((score, name))
+    scores.sort(reverse=True, key=lambda x: x[0])
+    return [name for _, name in scores[:max_tables]]
+
+
+def _render_schema_subset(schema: DatabaseSchema, table_names: list[str]) -> str:
+    """
+    Renderiza un subconjunto compacto del schema para ahorrar tokens.
+    """
+    lines: list[str] = []
+    for name in table_names:
+        table = schema.tables.get(name)
+        if not table:
+            continue
+        cols = ", ".join(col.name for col in table.columns[:20])
+        lines.append(f"{table.name}: {cols}")
+    return "\n".join(lines)
+
+
 def _classify_query_complexity(question: str) -> str:
     """
     Clasifica la complejidad de una query para seleccionar el modelo apropiado.
@@ -359,10 +394,14 @@ def _generate_system_prompt(schema: DatabaseSchema, dialect: str, question: str 
     """
     # Usar formato compacto si está habilitado (reduce tokens 60-70%)
     use_compact = os.getenv("USE_COMPACT_SCHEMA", "true").lower() in ("true", "1", "yes")
-    if use_compact:
-        schema_description = get_schema_for_prompt_compact(schema)
-    else:
-        schema_description = get_schema_for_prompt(schema)
+    schema_description = get_schema_for_prompt_compact(schema) if use_compact else get_schema_for_prompt(schema)
+
+    # Reducir schema a tablas candidatas si hay pregunta
+    if question:
+        candidates = _select_candidate_tables(schema, question, max_tables=int(os.getenv("SCHEMA_MAX_TABLES", "6")))
+        if candidates:
+            subset = _render_schema_subset(schema, candidates)
+            schema_description = f"(Subconjunto relevante)\n{subset}\n\n(Completo)\n{schema_description}"
 
     # Obtener ejemplos few-shot si están habilitados y tenemos una pregunta
     examples_text = ""

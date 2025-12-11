@@ -73,6 +73,7 @@ Sistema que traduce lenguaje natural a SQL complejo para PostgreSQL usando LangC
    - `ENABLE_FEW_SHOT`: Incluir ejemplos few-shot en prompts (default: `true`)
    - `ENABLE_PROMPT_CACHING`: Habilitar prompt caching de OpenAI (default: `true`)
    - `EMBEDDING_MODEL`: Modelo de embeddings para semantic cache (default: `all-MiniLM-L6-v2`)
+   - `SCHEMA_MAX_TABLES`: Número máximo de tablas candidatas en el prompt compacto (default: 6)
    - `QUERY_TIMEOUT`: Timeout en segundos para consultas (se aplica como `statement_timeout` en Postgres).
    - `DEFAULT_TRANSACTION_READ_ONLY`: Forzado vía conexión a modo lectura (aplicado en la configuración del engine).
    
@@ -227,18 +228,20 @@ Ver [ARQUITECTURA.md](ARQUITECTURA.md) para diagramas detallados en Mermaid que 
 
 ## Optimizaciones de Tokens y Latencia
 
-El sistema incluye múltiples optimizaciones para reducir tokens y mejorar la latencia:
+El sistema incluye múltiples optimizaciones para reducir tokens, latencia y coste:
 
 ### 1. Compresión de Schema
 - Formato compacto que reduce tokens en 60-70%
 - Mantiene toda la información crítica (PK, FK, tipos)
 - Configurable via `USE_COMPACT_SCHEMA`
+- Subset dinámico: se priorizan tablas candidatas según la pregunta (`SCHEMA_MAX_TABLES`, default 6) y luego se añade el schema completo compacto como respaldo. Esto reduce el prompt inicial sin perder cobertura.
 
 ### 2. Semantic Caching
 - Cache semántico que detecta queries similares usando embeddings
 - Reutiliza resultados para preguntas semánticamente similares
 - Threshold configurable (`SEMANTIC_CACHE_THRESHOLD=0.90`)
 - Reduce latencia en 80-90% para queries repetidas
+- Embeddings cacheados por hash de pregunta; si Redis está disponible se almacenan en Redis, si no, en memoria.
 
 ### 3. Model Selection Inteligente
 - Usa `gpt-4o-mini` para queries simples (40-60% más rápido)
@@ -255,6 +258,11 @@ El sistema incluye múltiples optimizaciones para reducir tokens y mejorar la la
 - Aprovecha el prompt caching automático de OpenAI
 - Cachea prefijos >1024 tokens (schema + reglas)
 - Configurable via `ENABLE_PROMPT_CACHING`
+
+### 6. Reducción de coste y salida
+- Solicita salidas tabulares/JSON cuando es posible para reducir tokens de salida.
+- Análisis opcional: el formato table/json evita prosa extensa salvo que el usuario lo requiera.
+- Límite de filas (`MAX_QUERY_ROWS`) y `QUERY_TIMEOUT` controlan el tamaño/tiempo de respuesta.
 
 ### Resultados Esperados
 - Tiempo promedio: De ~11s a <5s para queries simples, <10s para complejas

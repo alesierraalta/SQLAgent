@@ -52,6 +52,8 @@
 - Cache semántico: `ENABLE_SEMANTIC_CACHE` (`true/false`).
 - Modelos: `OPENAI_MODEL`, `FAST_MODEL`, `COMPLEX_MODEL`.
 - Redis/cache distribuido: `USE_REDIS_CACHE=true`, `CACHE_BACKEND=redis`, `REDIS_URL=redis://localhost:6379/0` (ver sección Docker).
+- Prompt compacto: `SCHEMA_MAX_TABLES` controla cuántas tablas candidatas se incluyen en el prompt (default 6) para reducir tokens.
+- Embeddings: `EMBEDDING_MODEL` (default `all-MiniLM-L6-v2`); embeddings cacheados por hash de pregunta. Si Redis está activo, se usan para cache distribuido.
 
 ## 6) Notas de seguridad/validación
 - Solo se permite un statement; no se aceptan `;` extra ni comentarios (`--`, `/* */`).
@@ -73,3 +75,9 @@
 - Desactiva cache distribuido: `set USE_REDIS_CACHE=false` y/o `set CACHE_BACKEND=memory` (por defecto).
 - Deja `REDIS_URL` vacío o sin definir.
 - El sistema usará cache en memoria/archivo; no intentará conectarse a Redis.
+
+## 10) Chat CLI (modo conversación)
+- Lanzar: `python -m src.cli_chat --mode safe`.
+- Comandos clave: `/config` (editar mode/format/limit/timeout), `/schema`, `/settings`, `/history`, `/retry`, `/sql`, `/export path`, `/clear`, `/clearcache`, `/exit`.
+- Autocompletado: escribe `/` y usa Tab para ver comandos con descripción.
+- Al cerrar (Ctrl+C o `/exit`), muestra resumen de sesión (queries, cache hits, tokens).
