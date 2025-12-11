@@ -14,6 +14,7 @@ from src.utils.history import (
     save_query,
     HISTORY_FILE,
     MAX_HISTORY_ENTRIES,
+    DISABLE_HISTORY,
 )
 
 
@@ -70,6 +71,17 @@ def test_clear_history(temp_history_file):
         assert temp_history_file.exists()
         
         clear_history()
+        assert not temp_history_file.exists()
+
+
+def test_disable_history_flag(temp_history_file):
+    """Test: flag DISABLE_HISTORY evita escribir historial."""
+    with patch("src.utils.history.HISTORY_FILE", temp_history_file), patch(
+        "src.utils.history.DISABLE_HISTORY", True
+    ):
+        save_query("test", "SQL", "result")
+        history = load_history()
+        assert history == []
         assert not temp_history_file.exists()
 
 

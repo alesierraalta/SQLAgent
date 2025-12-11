@@ -78,6 +78,7 @@
 
 ## 10) Chat CLI (modo conversación)
 - Lanzar: `python -m src.cli_chat --mode safe`.
-- Comandos clave: `/config` (editar mode/format/limit/timeout), `/schema`, `/settings`, `/history`, `/retry`, `/sql`, `/export path`, `/clear`, `/clearcache`, `/exit`.
+- Comandos clave: `/config` (editar mode/format/limit/timeout), `/schema`, `/settings`, `/history`, `/retry`, `/sql`, `/export path`, `/clear`, `/clearcache`, `/clearhistory`, `/exit`.
 - Autocompletado: escribe `/` y usa Tab para ver comandos con descripción.
 - Al cerrar (Ctrl+C o `/exit`), muestra resumen de sesión (queries, cache hits, tokens).
+- `DISABLE_HISTORY=true` desactiva el guardado de historial; útil en entornos sensibles.

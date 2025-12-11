@@ -239,3 +239,17 @@ def test_cte_invalid_table(validator):
     """
     with pytest.raises(InvalidTableError):
         validator.validate_query(sql)
+
+
+def test_date_functions_allowed(validator):
+    """Test: funciones de fecha permitidas (MONTH, DATE_PART, TO_TIMESTAMP)."""
+    sqls = [
+        "SELECT EXTRACT(MONTH FROM date) FROM sales",
+        "SELECT DATE_PART('month', date) FROM sales",
+        "SELECT DATE_PART('week', date) FROM sales",
+        "SELECT DATE_PART('quarter', date) FROM sales",
+        "SELECT DATE_PART('day', date) FROM sales",
+        "SELECT TO_TIMESTAMP(1700000000)",
+    ]
+    for sql in sqls:
+        validator.validate_query(sql)

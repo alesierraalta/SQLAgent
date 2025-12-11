@@ -276,6 +276,9 @@ El sistema incluye múltiples optimizaciones para reducir tokens, latencia y cos
 - Cache automático basado en hash de SQL normalizado
 - TTL configurable (default: 1 hora)
 - Reduce carga en BD y mejora UX para queries repetidas
+- Se puede desactivar historial en hosts sensibles con `DISABLE_HISTORY=true`; caches pueden limpiarse con `/clearcache` (chat) y `/clearhistory`.
+- Pruebas de rendimiento mock (perf): verifican latencia de rutas de cache y agente con umbrales estrictos.
+   - Ejecuta con `pytest -m perf -o addopts=` si deseas correr solo perf sin cobertura global.
 
 ### Schema Discovery Automático
 - Descubrimiento automático del schema desde PostgreSQL
@@ -286,6 +289,11 @@ El sistema incluye múltiples optimizaciones para reducir tokens, latencia y cos
 - Analiza errores SQL y genera queries corregidas automáticamente
 - Retry automático con query corregida
 - Solo para errores recuperables (sintaxis, columnas, tablas)
+
+Seguridad Operativa
+- Flags sensibles: DISABLE_HISTORY para evitar guardar historial en host; USE_REDIS_CACHE puede desactivarse en entornos con datos sensibles; CACHE_BACKEND=memory|file como fallback seguro.
+- Claves y secretos: gestionar OPENAI_API_KEY y DATABASE_URL vía env/secret manager; no loggear valores. Rotar según políticas.
+- Validación estricta: whitelist de funciones, bloqueo de comandos mutantes y multi-statement; schema restringido.
 
 ### Streaming de Resultados
 - Soporte para streaming de resultados en tiempo real

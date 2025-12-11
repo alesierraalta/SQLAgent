@@ -60,6 +60,11 @@ ALLOWED_FUNCTIONS = {
     # Fechas
     "DATE_TRUNC",
     "EXTRACT",
+    "DATE_PART",
+    "MONTH",
+    "DAY",
+    "WEEK",
+    "QUARTER",
     "YEAR",
     "NOW",
     "CURRENT_DATE",
@@ -80,6 +85,7 @@ ALLOWED_FUNCTIONS = {
     "TO_CHAR",
     "TO_DATE",
     "TO_NUMBER",
+    "TO_TIMESTAMP",
 }
 
 # Expresiones explícitamente prohibidas (AST)
@@ -144,8 +150,11 @@ class SQLValidator:
         """
         Limpia comentarios y tolera un ';' final, pero bloquea múltiples statements.
         """
+        if re.search(r"--|/\*", sql):
+            raise SQLValidationError("No se permiten comentarios en la query")
+
         sql_no_comments = re.sub(r"--.*?$", "", sql, flags=re.MULTILINE)
-        sql_no_comments = re.sub(r"/\\*.*?\\*/", "", sql_no_comments, flags=re.DOTALL)
+        sql_no_comments = re.sub(r"/\*.*?\*/", "", sql_no_comments, flags=re.DOTALL)
         sql_clean = sql_no_comments.strip()
 
         if sql_clean.endswith(";"):
@@ -218,6 +227,9 @@ class SQLValidator:
         for func in expression.find_all(exp.Func):
             func_name = func.name
             if not func_name:
+                continue
+            # Saltar literales numéricos u otros tokens no-función
+            if func_name.isdigit():
                 continue
             if func_name == "*":
                 continue

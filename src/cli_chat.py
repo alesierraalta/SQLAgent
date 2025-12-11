@@ -115,6 +115,7 @@ class ChatApp:
             ("/export", "guarda el último resultado"),
             ("/clear", "limpia pantalla"),
             ("/clearcache", "limpia caches (SQL + semántico)"),
+            ("/clearhistory", "limpia historial local"),
             ("/help", "ayuda"),
             ("/exit", "salir"),
             ("/quit", "salir"),
@@ -168,6 +169,11 @@ class ChatApp:
             clear_cache()
             clear_semantic_cache()
             self.console.print("[green]Cache cleared (SQL + semantic)[/green]")
+            return False
+        if name == "/clearhistory":
+            from src.utils.history import clear_history
+            clear_history()
+            self.console.print("[green]History cleared[/green]")
             return False
         if name == "/schema":
             schema_text = get_schema_for_prompt_compact(self.schema) or get_schema_for_prompt(self.schema)

@@ -11,6 +11,7 @@ from src.utils.logger import logger
 # Ruta del archivo de historial
 HISTORY_FILE = Path.home() / ".llm_dw_history.json"
 MAX_HISTORY_ENTRIES = 100
+DISABLE_HISTORY = os.getenv("DISABLE_HISTORY", "false").lower() in ("true", "1", "yes")
 
 
 def save_query(question: str, sql: str | None = None, response: str | None = None, success: bool = True) -> None:
@@ -23,6 +24,9 @@ def save_query(question: str, sql: str | None = None, response: str | None = Non
         response: Respuesta del agente (opcional)
         success: Si la query fue exitosa
     """
+    if DISABLE_HISTORY:
+        logger.debug("Historial deshabilitado por DISABLE_HISTORY=true")
+        return
     try:
         # Cargar historial existente
         history = load_history()
@@ -64,6 +68,8 @@ def load_history(limit: int | None = None) -> List[Dict[str, Any]]:
         Lista de entradas del historial
     """
     try:
+        if DISABLE_HISTORY:
+            return []
         if not HISTORY_FILE.exists():
             return []
         
