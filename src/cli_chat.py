@@ -7,6 +7,13 @@ import os
 import sys
 from typing import Any, Iterable, Sequence
 
+try:
+    from prompt_toolkit import prompt as pt_prompt
+    from prompt_toolkit.completion import Completer, Completion
+    PT_AVAILABLE = True
+except Exception:
+    PT_AVAILABLE = False
+
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.panel import Panel
@@ -28,11 +35,32 @@ from src.utils.history import load_history, save_query
 from src.utils.logger import logger
 from src.utils.redis_client import acquire_lock, release_lock
 from src.utils.cache import clear_cache
-from src.utils.semantic_cache import clear_semantic_cache
+from src.utils.semantic_cache import clear_semantic_cache, initialize_semantic_cache
 from src.validators.sql_validator import SQLValidator
 
 
 load_dotenv()
+
+
+class CommandCompleter(Completer):
+    def __init__(self, commands: list[tuple[str, str]]):
+        self.commands = commands
+
+    def get_completions(self, document, complete_event):
+        text = document.text_before_cursor
+        # Mostrar todas las opciones si está vacío o solo "/"
+        if text == "" or text == "/":
+            for cmd, desc in self.commands:
+                display = f"{cmd} — {desc}"
+                yield Completion(cmd, start_position=-len(text), display=display)
+            return
+
+        # Aceptar sin slash inicial para no perder sugerencias al borrar
+        needle = text if text.startswith("/") else f"/{text}"
+        for cmd, desc in self.commands:
+            if cmd.startswith(needle):
+                display = f"{cmd} — {desc}"
+                yield Completion(cmd, start_position=-len(text), display=display)
 
 
 def _safe_env_value(name: str, default: str | None = None) -> str:
@@ -66,24 +94,61 @@ class ChatApp:
         self.last_prompt: str | None = None
         self.last_result: Any = None
         self.last_sql: str | None = None
+        self.session_stats = {
+            "queries": 0,
+            "cache_sql": 0,
+            "cache_semantic": 0,
+            "cache_none": 0,
+            "tokens_total": 0,
+            "tokens_input": 0,
+            "tokens_output": 0,
+        }
+        self.commands_info: list[tuple[str, str]] = [
+            ("/config", "cambiar ajustes interactivos"),
+            ("/setup", "alias de config"),
+            ("/schema", "muestra el schema resumido"),
+            ("/settings", "muestra configuración actual"),
+            ("/set", "cambia ajustes (mode, limit, timeout, format)"),
+            ("/history", "muestra últimos prompts"),
+            ("/retry", "reenvía último prompt"),
+            ("/sql", "pegar SQL manual para validar/ejecutar"),
+            ("/export", "guarda el último resultado"),
+            ("/clear", "limpia pantalla"),
+            ("/clearcache", "limpia caches (SQL + semántico)"),
+            ("/help", "ayuda"),
+            ("/exit", "salir"),
+            ("/quit", "salir"),
+            ("/?", "ayuda"),
+            ("/commands", "ayuda"),
+            ("/h", "ayuda"),
+        ]
+        self.completer = CommandCompleter(self.commands_info) if PT_AVAILABLE else None
 
     # Entry point
     def run(self) -> None:
+        initialize_semantic_cache()  # Preload embeddings to avoid cold-start latency
         self._print_banner()
-        while True:
-            try:
-                user_input = Prompt.ask("[bold cyan]chat[/bold cyan]").strip()
-            except (KeyboardInterrupt, EOFError):
-                self.console.print("\n[yellow]Bye[/yellow]")
-                return
-
-            if not user_input:
-                continue
-            if user_input.startswith("/"):
-                if self._handle_command(user_input):
+        try:
+            while True:
+                try:
+                    user_input = self._ask_input().strip()
+                except (KeyboardInterrupt, EOFError):
+                    self.console.print("\n[yellow]Bye[/yellow]")
+                    self._print_session_summary()
                     return
-            else:
-                self._handle_prompt(user_input)
+
+                if not user_input:
+                    continue
+                if user_input == "/":
+                    self._print_help()
+                    continue
+                if user_input.startswith("/"):
+                    if self._handle_command(user_input):
+                        break
+                else:
+                    self._handle_prompt(user_input)
+        finally:
+            self._print_session_summary()
 
     # Commands
     def _handle_command(self, command: str) -> bool:
@@ -92,6 +157,9 @@ class ChatApp:
 
         if name in ("/help", "/?", "/commands", "/h"):
             self._print_help()
+            return False
+        if name in ("/config", "/setup"):
+            self._interactive_config()
             return False
         if name in ("/exit", "/quit"):
             self.console.print("[green]Closing session[/green]")
@@ -163,7 +231,12 @@ class ChatApp:
             return
         except Exception as e:
             logger.exception("Unexpected error in chat prompt")
-            self.console.print(f"[red]Error:[/red] {e}")
+            msg = str(e)
+            if "timeout" in msg.lower():
+                self.console.print("[red]Timeout:[/red] la consulta tardó demasiado.")
+                self.console.print("[dim]Sugerencia: usa LIMIT más pequeño, añade filtros de fecha o sube QUERY_TIMEOUT.[/dim]")
+            else:
+                self.console.print(f"[red]Error:[/red] {msg}")
             return
         finally:
             release_lock(lock_key)
@@ -176,6 +249,7 @@ class ChatApp:
             self._print_metadata(sql_generated, result)
             self._render_response(response)
             save_query(prompt, sql_generated, str(response) if response else None, success=result.get("success", True))
+            self._record_stats(result)
         else:
             self.last_result = result
             self.last_sql = None
@@ -276,19 +350,85 @@ class ChatApp:
         self.console.print("[cyan]" + " | ".join(items) + "[/cyan]")
 
     def _print_help(self) -> None:
-        help_lines = [
-            "/schema       - muestra el schema resumido",
-            "/settings     - muestra configuraci\u00f3n actual",
-            "/set k=v      - cambia ajustes (mode, limit, timeout, format)",
-            "/history [n]  - muestra \u00faltimos prompts",
-            "/retry        - reenv\u00eda \u00faltimo prompt",
-            "/sql          - pega SQL manual para validar/ejecutar",
-            "/export path  - guarda el \u00faltimo resultado",
-            "/clear        - limpia pantalla",
-            "/clearcache   - limpia caches (SQL + sem\u00e1ntico)",
-            "/exit         - salir",
-        ]
+        help_lines = [f"{cmd:<12} - {desc}" for cmd, desc in self.commands_info]
         self.console.print(Panel("\n".join(help_lines), title="Comandos", border_style="cyan"))
+
+    def _ask_input(self) -> str:
+        if PT_AVAILABLE and self.completer:
+            try:
+                return pt_prompt("chat> ", completer=self.completer, complete_while_typing=True)
+            except Exception:
+                return Prompt.ask("[bold cyan]chat[/bold cyan]")
+        return Prompt.ask("[bold cyan]chat[/bold cyan]")
+
+    def _record_stats(self, meta: dict[str, Any]) -> None:
+        self.session_stats["queries"] += 1
+        cache_hit = meta.get("cache_hit_type")
+        if cache_hit == "sql":
+            self.session_stats["cache_sql"] += 1
+        elif cache_hit == "semantic":
+            self.session_stats["cache_semantic"] += 1
+        else:
+            self.session_stats["cache_none"] += 1
+
+        for key in ("tokens_total", "tokens_input", "tokens_output"):
+            if meta.get(key) is not None:
+                self.session_stats[key] += meta.get(key, 0)
+
+    def _print_session_summary(self) -> None:
+        q = self.session_stats["queries"]
+        if q == 0:
+            return
+        lines = [
+            f"Queries: {q}",
+            f"Cache hits: SQL={self.session_stats['cache_sql']} | Semantic={self.session_stats['cache_semantic']} | None={self.session_stats['cache_none']}",
+        ]
+        if self.session_stats["tokens_total"]:
+            lines.append(
+                f"Tokens: total={self.session_stats['tokens_total']} "
+                f"(in={self.session_stats['tokens_input']}, out={self.session_stats['tokens_output']})"
+            )
+        self.console.print(Panel("\n".join(lines), title="Sesión", border_style="blue"))
+
+    def _interactive_config(self) -> None:
+        """Cambiar ajustes clave, uno por vez, sin reconfigurar todo."""
+        try:
+            while True:
+                panel = Panel(
+                    f"1) mode    : {self.mode}\n"
+                    f"2) format  : {self.output_format}\n"
+                    f"3) limit   : {self.limit}\n"
+                    f"4) timeout : {self.timeout}s\n\n"
+                    "Elige un número para editar o 'done' para salir.",
+                    title="Config actual",
+                    border_style="cyan",
+                )
+                self.console.print(panel)
+                choice = Prompt.ask("Selecciona (1-4/done)", choices=["1", "2", "3", "4", "done"], default="done")
+                if choice == "done":
+                    self.console.print("[green]Configuración actualizada[/green]")
+                    self._print_settings()
+                    return
+                if choice == "1":
+                    val = Prompt.ask("mode", choices=["safe", "power"], default=self.mode, show_choices=True)
+                    self.mode = val
+                elif choice == "2":
+                    val = Prompt.ask("format", choices=["table", "json", "text"], default=self.output_format, show_choices=True)
+                    self.output_format = val
+                elif choice == "3":
+                    val = Prompt.ask("limit (filas, entero)", default=str(self.limit))
+                    if val.isdigit():
+                        self.limit = int(val)
+                    else:
+                        self.console.print("[yellow]Límite inválido; se mantiene el actual[/yellow]")
+                elif choice == "4":
+                    val = Prompt.ask("timeout (s)", default=str(self.timeout))
+                    if val.isdigit():
+                        self.timeout = int(val)
+                    else:
+                        self.console.print("[yellow]Timeout inválido; se mantiene el actual[/yellow]")
+        except (KeyboardInterrupt, EOFError):
+            self.console.print("\n[yellow]Configuración cancelada[/yellow]")
 
     def _apply_setting(self, expr: str) -> None:
         if "=" not in expr:

@@ -68,3 +68,8 @@
 - Entorno local: `set CACHE_BACKEND=redis`, `set USE_REDIS_CACHE=true`, `set REDIS_URL=redis://localhost:6379/0`.
 - Efecto: cache SQL y semántico persisten entre sesiones; hits reducen llamadas a LLM/DB.
 - Chat CLI: usa `/clearcache` para limpiar; repite un prompt para ver `cache=sql` o `cache=semantic` en la metadata.
+
+## 9) Modo sin Redis
+- Desactiva cache distribuido: `set USE_REDIS_CACHE=false` y/o `set CACHE_BACKEND=memory` (por defecto).
+- Deja `REDIS_URL` vacío o sin definir.
+- El sistema usará cache en memoria/archivo; no intentará conectarse a Redis.

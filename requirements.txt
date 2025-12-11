@@ -8,6 +8,7 @@ langchain-openai>=0.0.5
 sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.0
 redis>=5.0.0
+prompt_toolkit>=3.0.0
 
 # Configuration
 python-dotenv>=1.0.0

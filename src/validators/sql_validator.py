@@ -124,8 +124,7 @@ class SQLValidator:
         if not sql or not sql.strip():
             raise SQLValidationError("Query SQL vacía o inválida")
 
-        sql = sql.strip()
-        self._reject_comments_and_semicolons(sql)
+        sql = self._normalize_sql(sql)
 
         try:
             parsed = sqlglot.parse(sql, read="postgres")
@@ -141,11 +140,24 @@ class SQLValidator:
         self._validate_expression(expression)
 
     # ---------------------- helpers ---------------------- #
-    def _reject_comments_and_semicolons(self, sql: str) -> None:
-        if ";" in sql:
-            raise SQLValidationError("No se permiten múltiples statements ni ';'")
-        if re.search(r"(--|/\\*|#)", sql):
-            raise SQLValidationError("No se permiten comentarios en la query")
+    def _normalize_sql(self, sql: str) -> str:
+        """
+        Limpia comentarios y tolera un ';' final, pero bloquea múltiples statements.
+        """
+        sql_no_comments = re.sub(r"--.*?$", "", sql, flags=re.MULTILINE)
+        sql_no_comments = re.sub(r"/\\*.*?\\*/", "", sql_no_comments, flags=re.DOTALL)
+        sql_clean = sql_no_comments.strip()
+
+        if sql_clean.endswith(";"):
+            sql_clean = sql_clean.rstrip(";\n\r\t ")
+
+        if ";" in sql_clean:
+            raise SQLValidationError("No se permiten múltiples statements ni ';' internos")
+
+        if not sql_clean:
+            raise SQLValidationError("Query SQL vacía o inválida")
+
+        return sql_clean
 
     def _is_select_like(self, expression: exp.Expression) -> bool:
         return isinstance(expression, (exp.Select, exp.Union, exp.With, exp.Subquery))
