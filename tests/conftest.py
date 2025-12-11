@@ -1,7 +1,9 @@
 """Fixtures compartidas para tests."""
 
-import pytest
 from unittest.mock import MagicMock, Mock
+import os
+
+import pytest
 
 from src.schemas.database_schema import ColumnSchema, DatabaseSchema, TableSchema
 
@@ -17,6 +19,9 @@ def sample_schema():
                     ColumnSchema(name="id", type="INTEGER", nullable=False),
                     ColumnSchema(name="date", type="DATE", nullable=False),
                     ColumnSchema(name="revenue", type="DECIMAL(10,2)", nullable=False),
+                    ColumnSchema(name="country", type="VARCHAR(100)", nullable=True),
+                    ColumnSchema(name="product_id", type="INTEGER", nullable=True),
+                    ColumnSchema(name="quantity", type="INTEGER", nullable=True),
                 ],
                 primary_key=["id"],
             ),
@@ -25,6 +30,7 @@ def sample_schema():
                 columns=[
                     ColumnSchema(name="id", type="INTEGER", nullable=False),
                     ColumnSchema(name="name", type="VARCHAR(200)", nullable=False),
+                    ColumnSchema(name="category", type="VARCHAR(100)", nullable=True),
                 ],
                 primary_key=["id"],
             ),
@@ -53,6 +59,7 @@ def mock_llm():
 @pytest.fixture
 def mock_agent():
     """Crea un mock del agente LangChain."""
+    os.environ["ENABLE_SEMANTIC_CACHE"] = "false"
     agent = MagicMock()
     agent.invoke.return_value = {
         "messages": [

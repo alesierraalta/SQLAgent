@@ -76,7 +76,7 @@ def test_execute_query_empty_result_no_loop(mock_agent):
     )
     ai_message = AIMessage(
         content="Query ejecutada",
-        tool_calls=[{"name": "validated_sql_query", "args": {"query": "SELECT * FROM sales"}}]
+        tool_calls=[{"id": "call1", "name": "validated_sql_query", "args": {"query": "SELECT * FROM sales"}}]
     )
     
     mock_agent.invoke.return_value = {
@@ -102,7 +102,7 @@ def test_execute_query_detects_duplicate_queries(mock_agent):
     )
     ai_message = AIMessage(
         content="Query ejecutada",
-        tool_calls=[{"name": "validated_sql_query", "args": {"query": "SELECT * FROM sales"}}]
+        tool_calls=[{"id": "call1", "name": "validated_sql_query", "args": {"query": "SELECT * FROM sales"}}]
     )
     
     # El agente intenta ejecutar la misma query múltiples veces
@@ -130,7 +130,7 @@ def test_execute_query_empty_result_formatted_message(mock_agent):
     )
     ai_message = AIMessage(
         content="Query ejecutada exitosamente",
-        tool_calls=[{"name": "validated_sql_query", "args": {"query": "SELECT * FROM sales WHERE id = 999"}}]
+        tool_calls=[{"id": "call1", "name": "validated_sql_query", "args": {"query": "SELECT * FROM sales WHERE id = 999"}}]
     )
     
     mock_agent.invoke.return_value = {

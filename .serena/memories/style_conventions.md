@@ -1,0 +1,9 @@
+- Lenguaje principal: Python 3.8+. Arquitectura modular (agents, validators, schemas, utils, cli).
+- CLI con Click y Rich; mensajes y docstrings en español; salida coloreada.
+- Modelado de schema con Pydantic (`DatabaseSchema`, `TableSchema`, `ColumnSchema`); SQLAlchemy para engine/pooling.
+- Seguridad: solo SELECT; whitelist de tablas/columnas; detección de comandos peligrosos; validación recursiva (subconsultas/CTEs); timeouts.
+- Prompts/LLM: LangChain `ChatOpenAI`, system prompt dinámico con schema; retries/backoff, cache semántico opcional y modelos rápido/complex.
+- Configuración vía `.env` (OPENAI_API_KEY, DATABASE_URL, modelos, límites de filas, TTL cache, toggles discovery/schema).
+- Historial de queries en `~/.llm_dw_history.json`; logs con logger util.
+- Estilo de código: funciones con nombres claros snake_case; uso frecuente de typing (Dict, List, Optional) y dataclasses/Pydantic; manejo de errores con excepciones custom en `utils.exceptions` y logging.
+- Dataset de prueba opcional (`scripts/generate_test_data.py`).

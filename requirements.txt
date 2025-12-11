@@ -21,6 +21,7 @@ rich>=13.0.0
 
 # SQL parsing and validation
 sqlparse>=0.4.4
+sqlglot>=23.0.0
 
 # Testing
 pytest>=7.4.0

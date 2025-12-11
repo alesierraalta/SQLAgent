@@ -73,6 +73,8 @@ Sistema que traduce lenguaje natural a SQL complejo para PostgreSQL usando LangC
    - `ENABLE_FEW_SHOT`: Incluir ejemplos few-shot en prompts (default: `true`)
    - `ENABLE_PROMPT_CACHING`: Habilitar prompt caching de OpenAI (default: `true`)
    - `EMBEDDING_MODEL`: Modelo de embeddings para semantic cache (default: `all-MiniLM-L6-v2`)
+   - `QUERY_TIMEOUT`: Timeout en segundos para consultas (se aplica como `statement_timeout` en Postgres).
+   - `DEFAULT_TRANSACTION_READ_ONLY`: Forzado vía conexión a modo lectura (aplicado en la configuración del engine).
    
    **Nota**: Ajusta `DATABASE_URL` según tu configuración de PostgreSQL.
 

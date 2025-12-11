@@ -3,7 +3,12 @@
 import pytest
 
 from src.schemas.database_schema import ColumnSchema, DatabaseSchema, TableSchema
-from src.utils.exceptions import DangerousCommandError, InvalidColumnError, InvalidTableError
+from src.utils.exceptions import (
+    DangerousCommandError,
+    InvalidColumnError,
+    InvalidTableError,
+    SQLValidationError,
+)
 from src.validators.sql_validator import SQLValidator
 
 
@@ -18,6 +23,9 @@ def sample_schema():
                     ColumnSchema(name="id", type="INTEGER", nullable=False),
                     ColumnSchema(name="date", type="DATE", nullable=False),
                     ColumnSchema(name="revenue", type="DECIMAL(10,2)", nullable=False),
+                    ColumnSchema(name="country", type="VARCHAR(100)", nullable=True),
+                    ColumnSchema(name="product_id", type="INTEGER", nullable=True),
+                    ColumnSchema(name="quantity", type="INTEGER", nullable=True),
                 ],
                 primary_key=["id"],
             ),
@@ -26,6 +34,7 @@ def sample_schema():
                 columns=[
                     ColumnSchema(name="id", type="INTEGER", nullable=False),
                     ColumnSchema(name="name", type="VARCHAR(200)", nullable=False),
+                    ColumnSchema(name="category", type="VARCHAR(100)", nullable=True),
                 ],
                 primary_key=["id"],
             ),
@@ -199,3 +208,34 @@ ORDER BY SUM(s.revenue) DESC
 LIMIT 10"""
     # No debe lanzar InvalidColumnError
     validator.validate_query(sql)
+
+
+def test_rejects_multistatement(validator):
+    """Test: Rechaza múltiples statements con ';'."""
+    sql = "SELECT * FROM sales; DROP TABLE sales"
+    with pytest.raises(SQLValidationError):
+        validator.validate_query(sql)
+
+
+def test_rejects_comments(validator):
+    """Test: Rechaza comentarios en la query."""
+    sql = "SELECT * FROM sales -- comentario"
+    with pytest.raises(SQLValidationError):
+        validator.validate_query(sql)
+
+
+def test_rejects_dml_update(validator):
+    """Test: Rechaza comando UPDATE."""
+    sql = "UPDATE sales SET revenue = 0"
+    with pytest.raises(DangerousCommandError):
+        validator.validate_query(sql)
+
+
+def test_cte_invalid_table(validator):
+    """Test: CTE con tabla no permitida debe fallar."""
+    sql = """
+    WITH tmp AS (SELECT * FROM unauthorized_table)
+    SELECT * FROM tmp
+    """
+    with pytest.raises(InvalidTableError):
+        validator.validate_query(sql)

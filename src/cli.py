@@ -1226,7 +1226,7 @@ def stats(days: int, slow_threshold: float, clear: bool):
             console.print()
         
         # Queries lentas
-        slow_queries = get_slow_queries(threshold_seconds=slow_threshold, limit=5)
+        slow_queries = get_slow_queries(threshold_seconds=slow_threshold, limit=5) or []
         if slow_queries:
             console.print(f"[bold yellow]Top 5 Queries Lentas (>={slow_threshold}s):[/bold yellow]\n")
             slow_table = Table(show_header=True, header_style="bold magenta")
@@ -1264,7 +1264,7 @@ def stats(days: int, slow_threshold: float, clear: bool):
                 console.print()
         
         # Queries fallidas recientes
-        failed_queries = get_failed_queries(limit=5)
+        failed_queries = get_failed_queries(limit=5) or []
         if failed_queries:
             console.print("[bold red]Queries Fallidas Recientes:[/bold red]\n")
             failed_table = Table(show_header=True, header_style="bold magenta")

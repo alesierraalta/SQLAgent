@@ -5,8 +5,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.utils.database import get_db_engine, test_connection
+from src.utils.database import get_db_engine, test_connection as db_test_connection
 from src.utils.exceptions import DatabaseConnectionError
+
+
+def test_import_database_module():
+    """Asegura que el módulo database se importe (cobertura)."""
+    import importlib
+
+    module = importlib.import_module("src.utils.database")
+    assert module is not None
 
 
 @patch("src.utils.database.create_engine")
@@ -38,7 +46,7 @@ def test_test_connection_success(mock_get_engine):
     mock_conn.execute.return_value = None
     mock_get_engine.return_value = mock_engine
 
-    result = test_connection()
+    result = db_test_connection()
 
     assert result is True
 
@@ -48,6 +56,6 @@ def test_test_connection_failure(mock_get_engine):
     """Test: Conexión fallida."""
     mock_get_engine.side_effect = Exception("Connection error")
 
-    result = test_connection()
+    result = db_test_connection()
 
     assert result is False

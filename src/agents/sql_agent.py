@@ -722,7 +722,14 @@ def execute_query(
 
             # Si no se encontr? respuesta, usar fallback
             if not response:
-                response = str(result)
+                if "messages" in result and result["messages"]:
+                    first_msg = result["messages"][0]
+                    if hasattr(first_msg, "content") and first_msg.content:
+                        response = str(first_msg.content)
+                    else:
+                        response = str(result)
+                else:
+                    response = str(result)
 
             # Detectar loops: verificar si estamos generando queries repetidamente con resultados vacíos
             if sql_generated:

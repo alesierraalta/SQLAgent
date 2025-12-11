@@ -1,0 +1,5 @@
+- Ejecutar `pytest` (y `pytest --cov=src/validators --cov=src/utils/database.py --cov-report=html` o el scope configurado) para asegurar >=80% coverage en componentes críticos.
+- Probar comandos principales relevantes: `python -m src.cli query ...`, `python -m src.cli schema`, `python -m src.cli validate-sql ...`, `python -m src.cli test-connection` según cambios.
+- Verificar variables `.env` necesarias (OPENAI_API_KEY, DATABASE_URL, QUERY_TIMEOUT, toggles de cache/modelos) y, si aplica, usuario DB read-only.
+- Revisar logs/console outputs con Rich para formato correcto y mensajes en español.
+- Actualizar documentación si cambian comandos o configuraciones (README/ARQUITECTURA).

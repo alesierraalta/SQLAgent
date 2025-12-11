@@ -1,6 +1,7 @@
 """Gestión de conexiones a la base de datos con connection pooling."""
 
 import os
+import time
 from contextlib import contextmanager
 from typing import Generator
 
@@ -15,6 +16,7 @@ load_dotenv()
 
 # Engine global (singleton pattern)
 _engine: Engine | None = None
+_engine_url: str | None = None
 
 
 def get_db_engine() -> Engine:
@@ -35,16 +37,22 @@ def get_db_engine() -> Engine:
     """
     global _engine
 
-    if _engine is not None:
-        return _engine
-
+    global _engine_url
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
+        # Invalida cache si falta URL
+        _engine = None
+        _engine_url = None
         raise DatabaseConnectionError(
             "DATABASE_URL no está configurada en las variables de entorno.",
         )
 
+    if _engine is not None and _engine_url == database_url:
+        return _engine
+
     try:
+        query_timeout_ms = int(os.getenv("QUERY_TIMEOUT", "30")) * 1000  # statement_timeout usa ms
+        connect_options = f"-c statement_timeout={query_timeout_ms} -c default_transaction_read_only=on"
         _engine = create_engine(
             database_url,
             poolclass=QueuePool,
@@ -53,7 +61,11 @@ def get_db_engine() -> Engine:
             pool_pre_ping=True,  # Verifica conexiones antes de usarlas
             pool_recycle=3600,  # Recicla conexiones después de 1 hora
             echo=False,  # Cambiar a True para debug SQL
+            connect_args={
+                "options": connect_options
+            },
         )
+        _engine_url = database_url
         return _engine
     except Exception as e:
         # Ocultar credenciales del error
@@ -105,15 +117,23 @@ def get_db_connection() -> Generator:
         DatabaseConnectionError: Si no se puede obtener la conexión
     """
     engine = get_db_engine()
-    try:
-        with engine.connect() as conn:
-            yield conn
-    except Exception as e:
-        safe_url = _sanitize_url(str(engine.url))
-        raise DatabaseConnectionError(
-            f"Error al obtener conexión de la base de datos: {str(e)}",
-            database_url=safe_url,
-        ) from e
+    attempts = 3
+    last_error = None
+    for i in range(attempts):
+        try:
+            with engine.connect() as conn:
+                yield conn
+                return
+        except Exception as e:
+            last_error = e
+            if i < attempts - 1:
+                time.sleep(2 ** i)  # backoff exponencial: 1s, 2s
+            else:
+                safe_url = _sanitize_url(str(engine.url))
+                raise DatabaseConnectionError(
+                    f"Error al obtener conexión de la base de datos: {str(e)}",
+                    database_url=safe_url,
+                ) from e
 
 
 def test_connection() -> bool:
