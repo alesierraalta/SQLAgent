@@ -4,8 +4,8 @@
 - `src/cli.py` - Main CLI entry point, needs updates for the new `config` command.
 - `src/cli_chat.py` - Handles interactive chat loop and streaming display; core logic for visibility toggles goes here.
 - `frontend/app/page.tsx` - Main chat page in the frontend, entry point for UI toggles.
-- `frontend/lib/store.ts` (New) - Proposed file for state management (Zustand) for UI settings.
-- `frontend/components/ui/view-options.tsx` (New) - Component for the granular "View Options" dropdown.
+- `frontend/lib/store.ts` - Proposed file for state management (Zustand) for UI settings.
+- `frontend/components/view-settings.tsx` - Component for the granular "View Options" dropdown.
 - `src/utils/config.py` - Logic for loading/saving CLI configuration to a local file.
 
 ## Tasks
@@ -30,15 +30,15 @@
         - Add `--simple`, `--no-analysis`, `--show-sql` flags.
         - Ensure these flags override the persistent configuration loaded from step 1.1.
 
-- [ ] 3.0 Frontend State & UI
-    - [ ] 3.1 Setup Client-Side State Management.
+- [x] 3.0 Frontend State & UI
+    - [x] 3.1 Setup Client-Side State Management.
         - Install `zustand` (or use React Context) in `frontend/`.
         - Create a store (`useSettingsStore`) to hold `simpleMode`, `showSQL`, `showThinking`, etc., with persistence to `localStorage`.
-    - [ ] 3.2 Create "View Options" Component.
+    - [x] 3.2 Create "View Options" Component.
         - Create `frontend/components/view-settings.tsx`.
         - Implement a Popover/Dropdown menu with toggle switches for each component.
         - Add a master "Simple Mode" switch that disables/hides the granular options or sets them to a preset.
-    - [ ] 3.3 Integrate into Chat Interface (`page.tsx`).
+    - [x] 3.3 Integrate into Chat Interface (`page.tsx`).
         - Place the "Simple Mode" toggle or Settings icon in the header or near the input.
         - Update the `Chat` or `Message` components to conditionally render the "Thinking" accordion and "SQL" code block based on the store state.
         - Ensure streaming updates don't "flash" hidden content.
