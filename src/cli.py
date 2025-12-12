@@ -35,6 +35,7 @@ from src.utils.performance import (
     get_slow_queries,
     record_query_performance,
 )
+from src.utils.config import load_config, save_config, DEFAULT_CONFIG
 from src.validators.sql_validator import SQLValidator
 
 console = Console()
@@ -43,7 +44,8 @@ console = Console()
 class StreamingDisplay:
     """Maneja el display de streaming en tiempo real."""
     
-    def __init__(self):
+    def __init__(self, config: dict[str, Any] = None):
+        self.config = config or {}
         self.sql = None
         self.status = "Iniciando..."
         self.data = None
@@ -86,14 +88,20 @@ class StreamingDisplay:
         """Renderiza el layout actual."""
         layout = Layout()
         
+        simple_mode = self.config.get("simple_mode", False)
+        show_sql = self.config.get("show_sql", True)
+        show_thinking = self.config.get("show_thinking", True)
+        
         # Sección de SQL
-        sql_section = Panel(
-            Syntax(self.sql, "sql", theme="monokai", line_numbers=False) if self.sql 
-            else Text("Generando SQL...", style="dim"),
-            title="[bold cyan]SQL[/bold cyan]",
-            border_style="cyan",
-            padding=(0, 1)
-        )
+        sql_section = None
+        if not simple_mode and show_sql:
+            sql_section = Panel(
+                Syntax(self.sql, "sql", theme="monokai", line_numbers=False) if self.sql 
+                else Text("Generando SQL...", style="dim"),
+                title="[bold cyan]SQL[/bold cyan]",
+                border_style="cyan",
+                padding=(0, 1)
+            )
         
         # Sección de estado
         status_section = Panel(
@@ -113,14 +121,17 @@ class StreamingDisplay:
         )
         
         # Sección de análisis
-        analysis_section = Panel(
-            Text(self.analysis or "Generando análisis...", style="white"),
-            title="[bold yellow]Análisis[/bold yellow]",
-            border_style="yellow",
-            padding=(0, 1)
-        )
+        analysis_section = None
+        if not simple_mode and show_thinking:
+            analysis_section = Panel(
+                Text(self.analysis or "Generando análisis...", style="white"),
+                title="[bold yellow]Análisis[/bold yellow]",
+                border_style="yellow",
+                padding=(0, 1)
+            )
         
         # Sección de error si existe
+        error_section = None
         if self.error:
             error_section = Panel(
                 Text(self.error, style="red"),
@@ -128,20 +139,16 @@ class StreamingDisplay:
                 border_style="red",
                 padding=(0, 1)
             )
-            layout.split_column(
-                Layout(sql_section, size=8),
-                Layout(status_section, size=3),
-                Layout(data_section, size=6),
-                Layout(analysis_section, size=6),
-                Layout(error_section, size=4)
-            )
-        else:
-            layout.split_column(
-                Layout(sql_section, size=8),
-                Layout(status_section, size=3),
-                Layout(data_section, size=6),
-                Layout(analysis_section, size=8)
-            )
+
+        # Construir layout dinámicamente
+        layout_components = []
+        if sql_section: layout_components.append(Layout(sql_section, size=8))
+        layout_components.append(Layout(status_section, size=3))
+        layout_components.append(Layout(data_section, size=6))
+        if analysis_section: layout_components.append(Layout(analysis_section, size=6 if error_section else 8))
+        if error_section: layout_components.append(Layout(error_section, size=4))
+        
+        layout.split_column(*layout_components)
         
         return layout
     
@@ -158,17 +165,18 @@ class StreamingDisplay:
             self.live = None
 
 
-def _display_streaming_response(question: str):
+def _display_streaming_response(question: str, config: dict[str, Any] = None):
     """
     Crea y retorna un objeto StreamingDisplay para mostrar progreso en tiempo real.
     
     Args:
         question: Pregunta del usuario (para contexto)
+        config: Configuración de visualización
         
     Returns:
         StreamingDisplay configurado
     """
-    display = StreamingDisplay()
+    display = StreamingDisplay(config=config)
     display.start()
     return display
 
@@ -842,7 +850,10 @@ def cli():
 @click.option("--limit", "-l", type=int, default=None, help="Límite de resultados")
 @click.option("--format", "-f", type=click.Choice(["table", "json"]), default="table", help="Formato de salida")
 @click.option("--export", type=click.Choice(["csv", "json", "excel"]), default=None, help="Exportar resultados a archivo")
-def query(question: str, verbose: bool, explain: bool, stream: bool, limit: int | None, format: str, export: str | None):
+@click.option("--simple", is_flag=True, help="Modo simple (solo respuesta y datos)")
+@click.option("--no-analysis", is_flag=True, help="Ocultar análisis")
+@click.option("--show-sql", is_flag=True, help="Mostrar SQL generado")
+def query(question: str, verbose: bool, explain: bool, stream: bool, limit: int | None, format: str, export: str | None, simple: bool, no_analysis: bool, show_sql: bool):
     """
     Ejecuta una consulta en lenguaje natural sobre la base de datos.
 
@@ -850,6 +861,22 @@ def query(question: str, verbose: bool, explain: bool, stream: bool, limit: int 
         llm-dw query "¿Cuál es el total de revenue por país en enero?"
     """
     try:
+        # Load and override config
+        config = load_config()
+        if simple:
+            config["simple_mode"] = True
+        if no_analysis:
+            config["show_thinking"] = False
+        if show_sql:
+            config["show_sql"] = True
+        if verbose:
+            config["show_sql"] = True # Legacy support
+            
+        # Determine effective verbose/show_sql for legacy logic blocks
+        # Some blocks in this function rely on 'verbose' boolean variable.
+        # We update it to reflect the config state if needed, or rely on config where possible.
+        verbose = verbose or config.get("show_sql", False) and not config.get("simple_mode", False)
+
         console.print(f"[bold blue]Pregunta:[/bold blue] {question}\n")
 
         # Pre-cargar modelo de embeddings si está habilitado (evita latencia en primera query)
@@ -908,10 +935,10 @@ def query(question: str, verbose: bool, explain: bool, stream: bool, limit: int 
                 console.print("[yellow]Nota: --explain no está disponible con --stream. Ejecutando sin explicación.[/yellow]\n")
             
             # Si verbose está activado, obtener metadata (SQL generado, tiempo, etc.)
-            if verbose:
+            if verbose or stream: # Use verbose logic for metadata retrieval generally
                 if stream:
                     # Modo streaming con display en tiempo real
-                    display = _display_streaming_response(question)
+                    display = _display_streaming_response(question, config=config)
                     
                     def stream_callback(chunk_info: dict):
                         """Callback para actualizar display durante streaming."""
@@ -926,6 +953,7 @@ def query(question: str, verbose: bool, explain: bool, stream: bool, limit: int 
                         raise e
                 else:
                     result = execute_query(agent, question, return_metadata=True, stream=False)
+                
                 if isinstance(result, dict):
                     response = result.get("response", "")
                     # Usar SQL de explain si está disponible, sino del resultado
@@ -933,15 +961,17 @@ def query(question: str, verbose: bool, explain: bool, stream: bool, limit: int 
                         sql_generated = result.get("sql_generated")
                     execution_time = result.get("execution_time", 0)
                     
-                    # Mostrar SQL generado si está disponible
-                    if sql_generated:
+                    # Mostrar SQL generado si está disponible y permitido por config
+                    if sql_generated and not config.get("simple_mode") and config.get("show_sql"):
                         console.print("\n[bold cyan]SQL Generado:[/bold cyan]")
                         syntax = Syntax(sql_generated, "sql", theme="monokai", line_numbers=False)
                         console.print(syntax)
                         console.print()
                     
-                    # Mostrar tiempo de ejecución
-                    console.print(f"[dim]Tiempo de ejecución: {execution_time:.2f}s[/dim]\n")
+                    # Mostrar tiempo de ejecución (ocultar en simple mode?)
+                    # PRD says "without the confusing SQL code or reasoning steps". Maybe keep execution time?
+                    if not config.get("simple_mode"):
+                        console.print(f"[dim]Tiempo de ejecución: {execution_time:.2f}s[/dim]\n")
                     
                     # Mostrar respuesta formateada
                     console.print("[bold green]Respuesta:[/bold green]\n")
@@ -969,7 +999,7 @@ def query(question: str, verbose: bool, explain: bool, stream: bool, limit: int 
                             success=result.get("success", True),
                         )
                 else:
-                    # Fallback si no se retorna dict
+                    # Fallback si no se retorna dict (raro con return_metadata=True)
                     console.print("[bold green]Respuesta:[/bold green]\n")
                     _format_query_result(result, output_format=format, sql_generated=sql_generated if 'sql_generated' in locals() else None, question=question)
                     
@@ -986,31 +1016,14 @@ def query(question: str, verbose: bool, explain: bool, stream: bool, limit: int 
                         success=True,
                     )
             else:
-                # Modo normal sin metadata
-                if stream:
-                    # Modo streaming con display en tiempo real
-                    display = _display_streaming_response(question)
-                    
-                    def stream_callback(chunk_info: dict):
-                        """Callback para actualizar display durante streaming."""
-                        if chunk_info:
-                            display.update(chunk_info)
-                    
-                    try:
-                        response = execute_query(agent, question, stream=True, stream_callback=stream_callback)
-                        display.stop()
-                        
-                        # Mostrar respuesta final formateada
-                        console.print("\n[bold green]Respuesta Final:[/bold green]\n")
-                        _format_query_result(response, output_format=format, sql_generated=None, question=question)
-                    except Exception as e:
-                        display.stop()
-                        raise e
-                else:
-                    # Modo normal sin streaming
-                    response = execute_query(agent, question, stream=False)
-                    console.print("[bold green]Respuesta:[/bold green]\n")
-                    _format_query_result(response, output_format=format, sql_generated=None, question=question)
+                # Modo normal sin metadata (y sin streaming según lógica original, aunque stream está soportado arriba)
+                # Si llegamos aquí es porque verbose=False y stream=False.
+                # Pero si usamos flags nuevos, tal vez queramos metadata pero filtrada visualmente.
+                # Vamos a simplificar: si no hay stream, ejecutamos normal.
+                
+                response = execute_query(agent, question, stream=False)
+                console.print("[bold green]Respuesta:[/bold green]\n")
+                _format_query_result(response, output_format=format, sql_generated=None, question=question)
                 
                 # Exportar si se solicita
                 if export:
@@ -1371,6 +1384,93 @@ def validate_sql(sql: str):
     except Exception as e:
         console.print(f"[bold red]Error inesperado:[/bold red] {str(e)}")
         logger.exception("Error inesperado en validate-sql")
+        sys.exit(1)
+
+
+@cli.group()
+def config():
+    """Administra la configuración del sistema."""
+    pass
+
+
+@config.command("list")
+def list_config():
+    """Lista todas las configuraciones actuales."""
+    try:
+        current_config = load_config()
+        
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("Clave", style="cyan")
+        table.add_column("Valor", style="white")
+        table.add_column("Default", style="dim")
+        
+        for key, value in current_config.items():
+            default_val = DEFAULT_CONFIG.get(key, "N/A")
+            table.add_row(key, str(value), str(default_val))
+        
+        console.print("[bold blue]Configuración Actual:[/bold blue]\n")
+        console.print(table)
+        
+    except Exception as e:
+        console.print(f"[bold red]Error al listar configuración:[/bold red] {str(e)}")
+        sys.exit(1)
+
+
+@config.command("get")
+@click.argument("key")
+def get_config_cmd(key: str):
+    """Obtiene el valor de una configuración específica."""
+    try:
+        current_config = load_config()
+        if key not in current_config:
+            console.print(f"[yellow]Clave '{key}' no encontrada en la configuración.[/yellow]")
+            return
+        
+        value = current_config[key]
+        console.print(f"[cyan]{key}[/cyan] = [white]{value}[/white]")
+        
+    except Exception as e:
+        console.print(f"[bold red]Error al obtener configuración:[/bold red] {str(e)}")
+        sys.exit(1)
+
+
+@config.command("set")
+@click.argument("key")
+@click.argument("value")
+def set_config_cmd(key: str, value: str):
+    """
+    Establece un valor de configuración.
+    
+    Para booleanos use: true/false, 1/0, yes/no
+    """
+    try:
+        current_config = load_config()
+        
+        # Validar si la clave es conocida (opcional, pero recomendado)
+        if key not in DEFAULT_CONFIG:
+            console.print(f"[yellow]Advertencia: '{key}' no es una configuración estándar.[/yellow]")
+        
+        # Intentar convertir tipos
+        # Si el default es bool, intentar convertir el input a bool
+        default_val = DEFAULT_CONFIG.get(key)
+        final_value = value
+        
+        if isinstance(default_val, bool) or str(value).lower() in ("true", "false", "yes", "no"):
+            if str(value).lower() in ("true", "1", "yes", "on"):
+                final_value = True
+            elif str(value).lower() in ("false", "0", "no", "off"):
+                final_value = False
+        elif isinstance(default_val, int):
+            try:
+                final_value = int(value)
+            except ValueError:
+                pass
+        
+        save_config(key, final_value)
+        console.print(f"[green]✓ Configuración actualizada:[/green] {key} = {final_value}")
+        
+    except Exception as e:
+        console.print(f"[bold red]Error al guardar configuración:[/bold red] {str(e)}")
         sys.exit(1)
 
 

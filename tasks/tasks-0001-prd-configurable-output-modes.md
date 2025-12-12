@@ -17,16 +17,16 @@
     - [x] 1.2 Verify `src/api/models.py` and response structures.
         - Ensure the backend response (streaming chunks) clearly distinguishes "analysis" (thinking) from "data" and "sql" so the client can easily filter them. (Existing structure seems adequate, but verify).
 
-- [ ] 2.0 CLI Implementation
-    - [ ] 2.1 Add a `config` command group to `src/cli.py`.
+- [x] 2.0 CLI Implementation
+    - [x] 2.1 Add a `config` command group to `src/cli.py`.
         - `llm-dw config set <key> <value>`
         - `llm-dw config get [key]`
         - `llm-dw config list`
-    - [ ] 2.2 Update `ChatStreamingDisplay` class in `src/cli_chat.py`.
+    - [x] 2.2 Update `ChatStreamingDisplay` class in `src/cli_chat.py`.
         - Accept a `config` object or flags in `__init__`.
         - Modify `_render` method to conditionally include/exclude `Panel` components based on visibility settings.
         - Ensure "Simple Mode" forces specific defaults (only Data/Answer).
-    - [ ] 2.3 Add runtime flags to `llm-dw query` and interactive chat.
+    - [x] 2.3 Add runtime flags to `llm-dw query` and interactive chat.
         - Add `--simple`, `--no-analysis`, `--show-sql` flags.
         - Ensure these flags override the persistent configuration loaded from step 1.1.
 

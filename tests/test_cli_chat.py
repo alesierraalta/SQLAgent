@@ -47,7 +47,7 @@ def test_safe_env_value_masks_credentials(monkeypatch: pytest.MonkeyPatch):
 
 def test_chat_streaming_display_updates_state():
     console = Console(record=True)
-    display = ChatStreamingDisplay(console, show_analysis=True)
+    display = ChatStreamingDisplay(console, config={"show_thinking": True, "show_sql": True, "simple_mode": False})
     display.update({"type": "sql", "content": "SELECT 1"})
     assert display.sql == "SELECT 1"
     assert "SQL" not in (display.error or "")
@@ -64,13 +64,16 @@ def test_chat_streaming_display_updates_state():
 @patch("src.cli_chat.SQLValidator")
 @patch("src.cli_chat.get_db_engine")
 @patch("src.cli_chat.create_sql_agent")
+@patch("src.cli_chat.load_config") # Patch load_config
 def test_chat_app_init_is_light_with_patches(
+    mock_load_config,
     mock_create_agent,
     mock_engine,
     mock_validator,
     mock_load_schema,
     sample_schema,
 ):
+    mock_load_config.return_value = {} # Mock empty config
     mock_load_schema.return_value = sample_schema
     mock_validator.return_value = MagicMock()
     mock_engine.return_value = MagicMock()
@@ -83,7 +86,8 @@ def test_chat_app_init_is_light_with_patches(
     assert any(cmd == "/help" for cmd, _ in app.commands_info)
 
 
-def test_apply_setting_and_record_stats():
+@patch("src.cli_chat.save_config") # Patch save_config
+def test_apply_setting_and_record_stats(mock_save_config):
     app: ChatApp = ChatApp.__new__(ChatApp)
     app.console = Console(record=True)
     app.mode = "safe"
@@ -92,6 +96,7 @@ def test_apply_setting_and_record_stats():
     app.timeout = 30
     app.analysis_enabled = True
     app.streaming_enabled = True
+    app.config = {"simple_mode": False, "show_thinking": True, "show_sql": True} # Mock config
     app.session_stats = {
         "queries": 0,
         "cache_sql": 0,
@@ -106,6 +111,11 @@ def test_apply_setting_and_record_stats():
     assert app.mode == "power"
     app._apply_setting("limit=42")
     assert app.limit == 42
+    
+    # Test new config settings
+    app._apply_setting("simple_mode=true")
+    assert app.config["simple_mode"] is True
+    mock_save_config.assert_called_with("simple_mode", True)
 
     app._record_stats({"cache_hit_type": "sql", "tokens_total": 3, "tokens_input": 1, "tokens_output": 2})
     assert app.session_stats["queries"] == 1
@@ -140,6 +150,7 @@ def test_handle_command_routes(monkeypatch: pytest.MonkeyPatch, sample_schema):
     app.timeout = 30
     app.analysis_enabled = False
     app.streaming_enabled = False
+    app.config = {} # Mock config
 
     app._print_help = MagicMock()
     app._interactive_config = MagicMock()

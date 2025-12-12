@@ -38,6 +38,7 @@ from src.utils.logger import logger
 from src.utils.redis_client import acquire_lock, release_lock
 from src.utils.cache import clear_cache
 from src.utils.semantic_cache import clear_semantic_cache, initialize_semantic_cache
+from src.utils.config import load_config, save_config, DEFAULT_CONFIG
 from src.validators.sql_validator import SQLValidator
 
 
@@ -76,9 +77,9 @@ def _safe_env_value(name: str, default: str | None = None) -> str:
 
 
 class ChatStreamingDisplay:
-    def __init__(self, console: Console, show_analysis: bool):
+    def __init__(self, console: Console, config: dict[str, Any]):
         self.console = console
-        self.show_analysis = show_analysis
+        self.config = config
         self.sql: str | None = None
         self.status: str = "[cyan]Iniciando...[/cyan]"
         self.analysis: str = ""
@@ -103,7 +104,9 @@ class ChatStreamingDisplay:
             self.status = "[cyan]Generando SQL...[/cyan]"
         elif chunk_type in ("execution", "data"):
             self.status = "[green]Ejecutando query...[/green]"
-        elif chunk_type == "analysis" and self.show_analysis:
+        elif chunk_type == "analysis":
+            # Only accumulate if we might show it, but usually safer to always accumulate
+            # in case the user toggles it (though here config is static for the run).
             if content:
                 self.analysis += str(content)
             self.status = "[yellow]Generando análisis...[/yellow]"
@@ -115,19 +118,35 @@ class ChatStreamingDisplay:
             self.live.update(self._render())
 
     def _render(self):
-        sql_panel = Panel(
-            Syntax(self.sql, "sql", theme="monokai", line_numbers=False) if self.sql else Text("Esperando SQL...", style="dim"),
-            title="SQL",
-            border_style="cyan",
-        )
+        simple_mode = self.config.get("simple_mode", False)
+        show_sql = self.config.get("show_sql", True)
+        show_thinking = self.config.get("show_thinking", True)
+
+        items = []
+
+        # SQL Panel: Hide in simple mode or if explicitly disabled
+        if not simple_mode and show_sql:
+            sql_panel = Panel(
+                Syntax(self.sql, "sql", theme="monokai", line_numbers=False) if self.sql else Text("Esperando SQL...", style="dim"),
+                title="SQL",
+                border_style="cyan",
+            )
+            items.append(sql_panel)
+
+        # Status Panel: Always show (gives feedback on progress)
         status_panel = Panel(Text(self.status), title="Estado", border_style="blue")
-        items = [sql_panel, status_panel]
-        if self.show_analysis:
+        items.append(status_panel)
+
+        # Analysis Panel: Hide in simple mode or if explicitly disabled
+        if not simple_mode and show_thinking:
             analysis_panel = Panel(Text(self.analysis or "…", style="white"), title="Análisis", border_style="yellow")
             items.append(analysis_panel)
+
+        # Error Panel: Always show if error exists
         if self.error:
             error_panel = Panel(Text(self.error, style="red"), title="Error", border_style="red")
             items.append(error_panel)
+            
         return Group(*items)
 
 
@@ -145,6 +164,16 @@ class ChatApp:
         self.output_format = output_format
         self.limit = limit or int(os.getenv("MAX_QUERY_ROWS", "1000"))
         self.timeout = timeout or int(os.getenv("QUERY_TIMEOUT", "30"))
+        
+        # Load configuration
+        self.config = load_config()
+        
+        # Override config with env vars if present (legacy support)
+        if os.getenv("ANALYSIS_ENABLED") is not None:
+             self.config["show_thinking"] = os.getenv("ANALYSIS_ENABLED", "true").lower() in ("true", "1", "yes", "on")
+        
+        self.streaming_enabled = os.getenv("CHAT_STREAM", "true").lower() in ("true", "1", "yes", "on")
+        
         self.schema = load_schema()
         self.validator = SQLValidator(self.schema)
         self.engine: Engine = get_db_engine()
@@ -161,8 +190,7 @@ class ChatApp:
             "tokens_input": 0,
             "tokens_output": 0,
         }
-        self.analysis_enabled = os.getenv("ANALYSIS_ENABLED", "true").lower() in ("true", "1", "yes", "on")
-        self.streaming_enabled = os.getenv("CHAT_STREAM", "true").lower() in ("true", "1", "yes", "on")
+        
         self.commands_info: list[tuple[str, str]] = [
             ("/config", "cambiar ajustes interactivos"),
             ("/setup", "alias de config"),
@@ -288,9 +316,11 @@ class ChatApp:
             self.console.print("[yellow]Otra ejecución similar está en curso; intenta de nuevo en unos segundos.[/yellow]")
             return
         try:
-            prefer_analysis = self.analysis_enabled
+            # Decide whether to request analysis based on config
+            prefer_analysis = self.config.get("show_thinking", True)
+            
             if self.streaming_enabled:
-                display = ChatStreamingDisplay(self.console, show_analysis=self.analysis_enabled)
+                display = ChatStreamingDisplay(self.console, config=self.config)
                 display.start()
 
                 def stream_callback(chunk_info: dict):
@@ -339,7 +369,11 @@ class ChatApp:
             sql_generated = result.get("sql_generated")
             self.last_sql = sql_generated
             self.last_result = response
-            self._print_metadata(sql_generated, result)
+            
+            # Print metadata only if not in simple mode or explicitly enabled
+            if not self.config.get("simple_mode", False):
+                 self._print_metadata(sql_generated, result)
+                 
             self._render_response(response)
             save_query(
                 prompt,
@@ -435,13 +469,24 @@ class ChatApp:
     # Settings and state
     def _print_banner(self) -> None:
         db_url = _safe_env_value("DATABASE_URL", "***")
-        model = os.getenv("OPENAI_MODEL", "gpt-4o")
+        try:
+            from src.utils.llm_factory import get_default_model_name, normalize_provider
+
+            provider = normalize_provider()
+            model = get_default_model_name(provider) or ""
+        except Exception:
+            model = os.getenv("OPENAI_MODEL", "")
         self.console.print(Panel("Chat CLI ready. Type a question or /help-like commands (/schema, /history, /sql, /exit).",
                                  title="LLM DW Chat", border_style="blue"))
+        
+        simple_mode = "ON" if self.config.get("simple_mode") else "OFF"
+        analysis = "ON" if self.config.get("show_thinking") else "OFF"
+        sql_viz = "ON" if self.config.get("show_sql") else "OFF"
+        
         self.console.print(
             f"[dim]DB: {db_url} | Model: {model} | Mode: {self.mode} | "
             f"Limit: {self.limit} | Timeout: {self.timeout}s | "
-            f"Analysis: {'on' if self.analysis_enabled else 'off'} | Stream: {'on' if self.streaming_enabled else 'off'}[/dim]"
+            f"Simple: {simple_mode} | Analysis: {analysis} | SQL: {sql_viz}[/dim]"
         )
 
     def _print_settings(self) -> None:
@@ -450,7 +495,9 @@ class ChatApp:
             f"format={self.output_format}",
             f"limit={self.limit}",
             f"timeout={self.timeout}",
-            f"analysis={'on' if self.analysis_enabled else 'off'}",
+            f"simple_mode={self.config.get('simple_mode')}",
+            f"show_thinking={self.config.get('show_thinking')}",
+            f"show_sql={self.config.get('show_sql')}",
             f"stream={'on' if self.streaming_enabled else 'off'}",
         ]
         self.console.print("[cyan]" + " | ".join(items) + "[/cyan]")
@@ -501,18 +548,20 @@ class ChatApp:
         try:
             while True:
                 panel = Panel(
-                    f"1) mode    : {self.mode}\n"
-                    f"2) format  : {self.output_format}\n"
-                    f"3) limit   : {self.limit}\n"
-                    f"4) timeout : {self.timeout}s\n"
-                    f"5) analysis: {'on' if self.analysis_enabled else 'off'}\n"
-                    f"6) stream  : {'on' if self.streaming_enabled else 'off'}\n\n"
+                    f"1) mode         : {self.mode}\n"
+                    f"2) format       : {self.output_format}\n"
+                    f"3) limit        : {self.limit}\n"
+                    f"4) timeout      : {self.timeout}s\n"
+                    f"5) simple_mode  : {self.config.get('simple_mode')}\n"
+                    f"6) show_thinking: {self.config.get('show_thinking')}\n"
+                    f"7) show_sql     : {self.config.get('show_sql')}\n"
+                    f"8) stream       : {'on' if self.streaming_enabled else 'off'}\n\n"
                     "Elige un número para editar o 'done' para salir.",
                     title="Config actual",
                     border_style="cyan",
                 )
                 self.console.print(panel)
-                choice = Prompt.ask("Selecciona (1-6/done)", choices=["1", "2", "3", "4", "5", "6", "done"], default="done")
+                choice = Prompt.ask("Selecciona (1-8/done)", choices=["1", "2", "3", "4", "5", "6", "7", "8", "done"], default="done")
                 if choice == "done":
                     self.console.print("[green]Configuración actualizada[/green]")
                     self._print_settings()
@@ -536,9 +585,24 @@ class ChatApp:
                     else:
                         self.console.print("[yellow]Timeout inválido; se mantiene el actual[/yellow]")
                 elif choice == "5":
-                    val = Prompt.ask("analysis", choices=["on", "off"], default="on" if self.analysis_enabled else "off", show_choices=True)
-                    self.analysis_enabled = val == "on"
+                    curr = self.config.get("simple_mode", False)
+                    val_str = Prompt.ask("simple_mode", choices=["true", "false"], default="true" if curr else "false")
+                    new_val = val_str == "true"
+                    self.config["simple_mode"] = new_val
+                    save_config("simple_mode", new_val)
                 elif choice == "6":
+                    curr = self.config.get("show_thinking", True)
+                    val_str = Prompt.ask("show_thinking", choices=["true", "false"], default="true" if curr else "false")
+                    new_val = val_str == "true"
+                    self.config["show_thinking"] = new_val
+                    save_config("show_thinking", new_val)
+                elif choice == "7":
+                    curr = self.config.get("show_sql", True)
+                    val_str = Prompt.ask("show_sql", choices=["true", "false"], default="true" if curr else "false")
+                    new_val = val_str == "true"
+                    self.config["show_sql"] = new_val
+                    save_config("show_sql", new_val)
+                elif choice == "8":
                     val = Prompt.ask("stream", choices=["on", "off"], default="on" if self.streaming_enabled else "off", show_choices=True)
                     self.streaming_enabled = val == "on"
         except (KeyboardInterrupt, EOFError):
@@ -551,6 +615,9 @@ class ChatApp:
         key, value = expr.split("=", 1)
         key = key.strip().lower()
         value = value.strip()
+        
+        bool_val = value.lower() in ("on", "true", "1", "yes")
+        
         if key == "mode" and value in ("safe", "power"):
             self.mode = value
         elif key == "limit" and value.isdigit():
@@ -559,10 +626,17 @@ class ChatApp:
             self.timeout = int(value)
         elif key == "format" and value in ("table", "json", "text"):
             self.output_format = value
-        elif key == "analysis" and value.lower() in ("on", "off", "true", "false", "1", "0", "yes", "no"):
-            self.analysis_enabled = value.lower() in ("on", "true", "1", "yes")
-        elif key == "stream" and value.lower() in ("on", "off", "true", "false", "1", "0", "yes", "no"):
-            self.streaming_enabled = value.lower() in ("on", "true", "1", "yes")
+        elif key == "stream":
+            self.streaming_enabled = bool_val
+        elif key == "simple_mode":
+            self.config["simple_mode"] = bool_val
+            save_config("simple_mode", bool_val)
+        elif key == "show_thinking" or key == "analysis":
+            self.config["show_thinking"] = bool_val
+            save_config("show_thinking", bool_val)
+        elif key == "show_sql":
+            self.config["show_sql"] = bool_val
+            save_config("show_sql", bool_val)
         else:
             self.console.print(f"[yellow]Unsupported setting:[/yellow] {expr}")
             return
