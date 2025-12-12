@@ -7,6 +7,7 @@
 - `frontend/lib/store.ts` - Proposed file for state management (Zustand) for UI settings.
 - `frontend/components/view-settings.tsx` - Component for the granular "View Options" dropdown.
 - `src/utils/config.py` - Logic for loading/saving CLI configuration to a local file.
+- `tests/test_cli_config_integration.py` - Integration tests for CLI configuration persistence.
 
 ## Tasks
 
@@ -43,8 +44,8 @@
         - Update the `Chat` or `Message` components to conditionally render the "Thinking" accordion and "SQL" code block based on the store state.
         - Ensure streaming updates don't "flash" hidden content.
 
-- [ ] 4.0 Integration & Testing
-    - [ ] 4.1 Test CLI persistence: Set a config, restart CLI, verify setting applies.
-    - [ ] 4.2 Test CLI overrides: Set default to "Simple", run with `--debug`, verify full output.
-    - [ ] 4.3 Test Frontend persistence: Toggle settings, reload page, verify state is restored.
-    - [ ] 4.4 Verify "Simple Mode" UX: Ensure that when enabled, the user sees *only* the final answer/table, and that "Thinking" doesn't clutter the view.
+- [x] 4.0 Integration & Testing
+    - [x] 4.1 Test CLI persistence: Set a config, restart CLI, verify setting applies.
+    - [x] 4.2 Test CLI overrides: Set default to "Simple", run with `--debug`, verify full output.
+    - [x] 4.3 Test Frontend persistence: Toggle settings, reload page, verify state is restored.
+    - [x] 4.4 Verify "Simple Mode" UX: Ensure that when enabled, the user sees *only* the final answer/table, and that "Thinking" doesn't clutter the view.

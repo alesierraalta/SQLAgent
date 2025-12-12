@@ -36,8 +36,8 @@ def load_config() -> Dict[str, Any]:
                 return {**DEFAULT_CONFIG, **config}
         except json.JSONDecodeError:
             print(f"Warning: Invalid config file at {CONFIG_FILE_PATH}. Using default configuration.")
-            return DEFAULT_CONFIG
-    return DEFAULT_CONFIG
+            return DEFAULT_CONFIG.copy()
+    return DEFAULT_CONFIG.copy()
 
 
 def save_config(key: str, value: Any):
