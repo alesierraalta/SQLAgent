@@ -257,7 +257,11 @@ def _extract_column_names_from_sql(sql: str, num_cols: int) -> list[str] | None:
             # Si es una función agregada, usar nombre descriptivo
             if re.match(r'SUM\s*\(', col_clean, re.IGNORECASE):
                 # Intentar extraer nombre de columna dentro de la función
-                inner_match = re.search(r'SUM\s*\(\s*[a-zA-Z_]*\.?([a-zA-Z_]+)', col_clean, re.IGNORECASE)
+                inner_match = re.search(
+                    r'SUM\s*\(\s*(?:[a-zA-Z_]+\.)?([a-zA-Z_]+)',
+                    col_clean,
+                    re.IGNORECASE,
+                )
                 if inner_match:
                     col_name = inner_match.group(1)
                     headers.append(f"Total {col_name.replace('_', ' ').title()}")
@@ -948,7 +952,14 @@ def query(question: str, verbose: bool, explain: bool, stream: bool, limit: int 
                         _export_results(response, sql_generated, export, question)
                     
                     # Guardar en historial
-                    save_query(question, sql_generated, response, success=result.get("success", True))
+                    save_query(
+                        question,
+                        sql_generated,
+                        response,
+                        success=result.get("success", True),
+                        cache_hit_type=result.get("cache_hit_type"),
+                        model_used=result.get("model_used"),
+                    )
                     
                     # Registrar métricas de performance
                     if sql_generated:

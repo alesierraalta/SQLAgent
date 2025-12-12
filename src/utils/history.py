@@ -14,7 +14,14 @@ MAX_HISTORY_ENTRIES = 100
 DISABLE_HISTORY = os.getenv("DISABLE_HISTORY", "false").lower() in ("true", "1", "yes")
 
 
-def save_query(question: str, sql: str | None = None, response: str | None = None, success: bool = True) -> None:
+def save_query(
+    question: str,
+    sql: str | None = None,
+    response: str | None = None,
+    success: bool = True,
+    cache_hit_type: str | None = None,
+    model_used: str | None = None,
+) -> None:
     """
     Guarda una query en el historial.
 
@@ -23,6 +30,8 @@ def save_query(question: str, sql: str | None = None, response: str | None = Non
         sql: SQL generado (opcional)
         response: Respuesta del agente (opcional)
         success: Si la query fue exitosa
+        cache_hit_type: Tipo de cache hit (opcional)
+        model_used: Modelo usado (opcional)
     """
     if DISABLE_HISTORY:
         logger.debug("Historial deshabilitado por DISABLE_HISTORY=true")
@@ -39,6 +48,11 @@ def save_query(question: str, sql: str | None = None, response: str | None = Non
             "success": success,
             "response_preview": response[:200] + "..." if response and len(response) > 200 else response,
         }
+
+        if cache_hit_type is not None:
+            entry["cache_hit_type"] = cache_hit_type
+        if model_used is not None:
+            entry["model_used"] = model_used
         
         # Agregar al inicio
         history.insert(0, entry)

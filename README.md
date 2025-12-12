@@ -14,7 +14,7 @@ Sistema que traduce lenguaje natural a SQL complejo para PostgreSQL usando LangC
 
 - Python 3.8+
 - PostgreSQL (o cualquier base de datos compatible con SQLAlchemy)
-- OpenAI API Key
+- API key del proveedor de LLM (OpenAI/Anthropic/Google)
 
 ## Instalación
 
@@ -49,7 +49,12 @@ Sistema que traduce lenguaje natural a SQL complejo para PostgreSQL usando LangC
    
    Editar `.env` y configurar:
    ```env
+   # LLM (multi-proveedor)
+   LLM_PROVIDER=openai  # openai|anthropic|google (gemini)
+   LLM_MODEL=           # recomendado para no-openai
    OPENAI_API_KEY=tu_api_key_aqui
+   ANTHROPIC_API_KEY=
+   GOOGLE_API_KEY=
    DATABASE_URL=postgresql://postgres:050403@localhost:5432/postgres
    OPENAI_MODEL=gpt-4o
    MAX_QUERY_ROWS=1000
@@ -78,6 +83,12 @@ Sistema que traduce lenguaje natural a SQL complejo para PostgreSQL usando LangC
    - `DEFAULT_TRANSACTION_READ_ONLY`: Forzado vía conexión a modo lectura (aplicado en la configuración del engine).
    
    **Nota**: Ajusta `DATABASE_URL` según tu configuración de PostgreSQL.
+   
+   **Proveedor de LLM (multi-proveedor)**:
+   - `LLM_PROVIDER`: `openai` (default), `anthropic`, `google`/`gemini`
+   - `LLM_MODEL`: modelo por defecto del proveedor (recomendado para `anthropic` y `google`)
+   - Keys: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY` (o `LLM_API_KEY` como alias)
+   - Requisito: el modelo debe soportar tool/function calling (el flujo ejecuta SQL vía tools).
 
 ## Uso
 
@@ -147,6 +158,47 @@ El comando muestra:
 - Top queries lentas
 - Patrones de queries más frecuentes
 - `--clear`: Limpiar todas las métricas
+
+### API HTTP (FastAPI) (experimental)
+
+Levanta el backend HTTP (útil para integrar un frontend web):
+
+```bash
+uvicorn src.api.app:app --host 127.0.0.1 --port 8000 --reload
+```
+
+O como módulo:
+
+```bash
+python -m src.api
+```
+
+Healthcheck:
+- `GET http://127.0.0.1:8000/api/v1/health`
+
+Endpoints principales:
+- `POST http://127.0.0.1:8000/api/v1/query` (single-shot)
+- `GET http://127.0.0.1:8000/api/v1/query/stream?question=...` (SSE streaming)
+- `GET http://127.0.0.1:8000/api/v1/schema`
+- `GET http://127.0.0.1:8000/api/v1/history`
+- `POST http://127.0.0.1:8000/api/v1/history/clear`
+- `GET http://127.0.0.1:8000/api/v1/stats`
+- `POST http://127.0.0.1:8000/api/v1/validate-sql`
+
+### Frontend Web (Next.js)
+
+Scaffold en `frontend/` (App Router + Tailwind). Ejecución local:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Variables:
+- Backend: `WEB_ALLOWED_ORIGINS` (CSV) debe incluir `http://localhost:3000` (default).
+- Frontend: `NEXT_PUBLIC_API_BASE_URL` (default: `http://127.0.0.1:8000/api/v1`).
+
 
 ## Configuración del Schema
 
@@ -354,9 +406,9 @@ DATABASE_URL=postgresql://usuario:password@host:puerto/nombre_db
 ### Error: "Error en API de LLM"
 
 **Soluciones**:
-1. Verifica que `OPENAI_API_KEY` esté configurada en `.env`
-2. Verifica que tengas créditos en tu cuenta de OpenAI
-3. Verifica que el modelo especificado (`OPENAI_MODEL`) esté disponible
+1. Verifica `LLM_PROVIDER` y la API key correspondiente (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY`)
+2. Verifica que el modelo configurado (`LLM_MODEL` u `OPENAI_MODEL`) exista y soporte tool calling
+3. Si usas OpenAI, verifica créditos y disponibilidad del modelo
 
 ### Queries muy lentas
 

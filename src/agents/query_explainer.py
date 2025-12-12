@@ -1,12 +1,11 @@
 """Agente para explicar queries SQL antes de ejecutarlas."""
 
-import os
 from typing import Any
 
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
 from sqlalchemy import Engine, text
 
+from src.utils.llm_factory import get_chat_model
 from src.utils.logger import logger
 
 # Cargar variables de entorno
@@ -29,8 +28,7 @@ def explain_query(sql: str, engine: Engine) -> str:
         explain_plan = _get_explain_plan(sql, engine)
         
         # Generar explicación usando LLM
-        model_name = os.getenv("OPENAI_MODEL", "gpt-4o")
-        llm = ChatOpenAI(model=model_name, temperature=0)
+        llm = get_chat_model(temperature=0, require_tools=False)
         
         prompt = f"""Eres un experto en SQL y bases de datos. Explica de forma clara y concisa qué hace esta query SQL.
 
@@ -96,8 +94,7 @@ def explain_query_simple(sql: str) -> str:
         Explicación simple en lenguaje natural
     """
     try:
-        model_name = os.getenv("OPENAI_MODEL", "gpt-4o")
-        llm = ChatOpenAI(model=model_name, temperature=0)
+        llm = get_chat_model(temperature=0, require_tools=False)
         
         prompt = f"""Explica de forma clara y concisa qué hace esta query SQL:
 

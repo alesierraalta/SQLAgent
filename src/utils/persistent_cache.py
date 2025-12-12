@@ -25,7 +25,7 @@ class CacheBackend(ABC):
         Returns:
             Dict con 'result', 'expires_at', 'cached_at', 'sql_preview' o None
         """
-        pass
+        pass  # pragma: no cover
     
     @abstractmethod
     def set(self, key: str, value: Dict[str, Any]) -> None:
@@ -36,7 +36,7 @@ class CacheBackend(ABC):
             key: Clave del cache
             value: Dict con 'result', 'expires_at', 'cached_at', 'sql_preview'
         """
-        pass
+        pass  # pragma: no cover
     
     @abstractmethod
     def delete(self, key: str) -> None:
@@ -46,12 +46,12 @@ class CacheBackend(ABC):
         Args:
             key: Clave del cache
         """
-        pass
+        pass  # pragma: no cover
     
     @abstractmethod
     def clear(self) -> None:
         """Limpia todo el cache."""
-        pass
+        pass  # pragma: no cover
     
     @abstractmethod
     def get_stats(self) -> Dict[str, Any]:
@@ -61,7 +61,7 @@ class CacheBackend(ABC):
         Returns:
             Dict con estadísticas
         """
-        pass
+        pass  # pragma: no cover
 
 
 class MemoryCache(CacheBackend):

@@ -101,3 +101,32 @@ def test_get_history_entry(temp_history_file):
         
         entry = get_history_entry(10)
         assert entry is None
+
+
+def test_save_query_truncates_history_when_exceeds_max(temp_history_file):
+    """Test: save_query corta historial al exceder MAX_HISTORY_ENTRIES."""
+    with patch("src.utils.history.HISTORY_FILE", temp_history_file), patch(
+        "src.utils.history.MAX_HISTORY_ENTRIES", 1
+    ):
+        save_query("q1", "SQL 1", "r1")
+        save_query("q2", "SQL 2", "r2")
+        history = load_history()
+        assert len(history) == 1
+        assert history[0]["question"] == "q2"
+
+
+def test_load_history_handles_invalid_json(temp_history_file):
+    """Test: load_history retorna [] si el JSON es inválido."""
+    temp_history_file.write_text("{ invalid json", encoding="utf-8")
+    with patch("src.utils.history.HISTORY_FILE", temp_history_file):
+        assert load_history() == []
+
+
+def test_clear_history_handles_unlink_error(temp_history_file):
+    """Test: clear_history no lanza si unlink falla."""
+    temp_history_file.write_text("[]", encoding="utf-8")
+
+    with patch("src.utils.history.HISTORY_FILE", temp_history_file), patch(
+        "src.utils.history.Path.unlink", side_effect=OSError("boom")
+    ):
+        clear_history()

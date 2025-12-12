@@ -277,3 +277,29 @@ def test_json_serialization(temp_storage):
     assert "original_sql" in pattern_data
     assert "corrected_sql" in pattern_data
     assert "success_count" in pattern_data
+
+
+def test_get_statistics_empty_store(pattern_store):
+    """Verifica estadística vacía cuando no hay patrones."""
+    pattern_store.patterns = {}
+    stats = pattern_store.get_statistics()
+    assert stats["total_patterns"] == 0
+    assert stats["total_uses"] == 0
+    assert stats["most_common"] == []
+
+
+def test_save_patterns_handles_exception(pattern_store, monkeypatch):
+    """_save_patterns no debe lanzar si hay error de escritura."""
+
+    def _raise(*args, **kwargs):
+        raise OSError("write fail")
+
+    monkeypatch.setattr("builtins.open", _raise)
+
+    # Esto intenta guardar y cae en except de _save_patterns
+    pattern_store.store_successful_correction(
+        original_sql="SELECT * FROM bad",
+        error_message="some error",
+        error_type="TEST",
+        corrected_sql="SELECT * FROM good",
+    )

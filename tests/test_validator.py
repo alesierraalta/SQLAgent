@@ -2,6 +2,8 @@
 
 import pytest
 
+from sqlglot import exp
+
 from src.schemas.database_schema import ColumnSchema, DatabaseSchema, TableSchema
 from src.utils.exceptions import (
     DangerousCommandError,
@@ -282,3 +284,108 @@ def test_is_dangerous_command_parse_fail(monkeypatch, validator):
 
 def test_is_dangerous_command_multi_statement(validator):
     assert validator.is_dangerous_command("SELECT 1; SELECT 2")
+
+
+def test_empty_sql_raises_validation_error(validator):
+    """Test: SQL vacío debe fallar antes de parsear."""
+    with pytest.raises(SQLValidationError):
+        validator.validate_query("")
+
+
+def test_rejects_multiple_parsed_statements(monkeypatch, validator):
+    """Test: si sqlglot retorna múltiples statements, debe rechazarse."""
+    monkeypatch.setattr("sqlglot.parse", lambda *args, **kwargs: [exp.Select(), exp.Select()])
+    with pytest.raises(SQLValidationError):
+        validator.validate_query("SELECT * FROM sales")
+
+
+def test_trailing_semicolon_is_allowed(validator):
+    """Test: un ';' final se tolera y no cuenta como multi-statement."""
+    validator.validate_query("SELECT * FROM sales;")
+
+
+def test_only_semicolon_normalizes_to_empty_and_fails(validator):
+    """Test: una query solo con ';' debe considerarse vacía tras normalizar."""
+    with pytest.raises(SQLValidationError):
+        validator.validate_query(" ; ")
+
+
+def test_build_table_alias_map_skips_empty_table_names(validator):
+    """Test: tablas sin nombre deben ignorarse en alias_map."""
+    expression = exp.Select().from_(exp.Table())
+    alias_map = validator._build_table_alias_map(expression)
+    assert alias_map == {}
+
+
+def test_validate_tables_skips_empty_table_names(validator):
+    """Test: tablas sin nombre no deben generar error en validación."""
+    expression = exp.Select().from_(exp.Table())
+    validator._validate_tables_and_aliases(expression, set())
+
+
+def test_validate_tables_blocks_dangerous_table_names(validator):
+    """Test: si el nombre de tabla coincide con comando peligroso, debe fallar."""
+    expression = exp.Select().from_(exp.Table(this=exp.Identifier(this="DROP")))
+    with pytest.raises(DangerousCommandError):
+        validator._validate_tables_and_aliases(expression, set())
+
+
+def test_validate_columns_skips_star_column(validator):
+    """Test: columnas '*' deben ser ignoradas en validación."""
+    expression = exp.Select(expressions=[exp.Column(this=exp.Identifier(this="*"))])
+    validator._validate_columns(expression, {}, set(), set())
+
+
+def test_cte_column_references_are_allowed(validator):
+    """Test: columnas referenciando CTE deben permitirse sin esquema."""
+    sql = "WITH cte AS (SELECT id FROM sales) SELECT cte.id FROM cte"
+    validator.validate_query(sql)
+
+
+def test_invalid_prefixed_column_raises(validator):
+    """Test: columna inválida con tabla explícita debe fallar."""
+    sql = "SELECT sales.unauthorized_column FROM sales"
+    with pytest.raises(InvalidColumnError):
+        validator.validate_query(sql)
+
+
+def test_validate_columns_invalid_table_branch(validator):
+    """Test: validar columnas con tabla desconocida debe lanzar InvalidTableError."""
+    col = exp.Column(this=exp.Identifier(this="id"), table=exp.Identifier(this="unauthorized_table"))
+    expression = exp.Select(expressions=[col])
+    with pytest.raises(InvalidTableError):
+        validator._validate_columns(expression, {}, set(), set())
+
+
+def test_extract_tables_accepts_expression(validator):
+    """Test: extract_tables acepta un AST directamente."""
+    expression = exp.Select().from_(exp.Table(this=exp.Identifier(this="sales")))
+    tables = validator.extract_tables(expression)
+    assert "sales" in tables
+
+
+def test_extract_tables_returns_empty_on_parse_failure(monkeypatch, validator):
+    """Test: si sqlglot no parsea, extract_tables retorna vacío."""
+    monkeypatch.setattr("sqlglot.parse", lambda *args, **kwargs: [])
+    assert validator.extract_tables("SELECT * FROM sales") == []
+
+
+def test_is_dangerous_command_detects_dangerous_identifier(monkeypatch, validator):
+    """Test: rama que detecta identificadores peligrosos."""
+    monkeypatch.setattr(
+        "sqlglot.parse",
+        lambda *args, **kwargs: [exp.Select(expressions=[exp.Identifier(this="DROP")])],
+    )
+    assert validator.is_dangerous_command("SELECT 1") is True
+
+
+def test_validate_functions_skips_star_named_funcs(validator):
+    """Test: funciones con nombre '*' deben ignorarse (caso raro en AST)."""
+    expression = exp.Select(expressions=[exp.Anonymous(this="*")])
+    validator._validate_functions(expression)
+
+
+def test_validate_functions_blocks_unknown_function(validator):
+    """Test: una función no-whitelist debe disparar SQLValidationError."""
+    with pytest.raises(SQLValidationError):
+        validator.validate_query("SELECT foo(id) FROM sales")

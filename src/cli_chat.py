@@ -15,7 +15,9 @@ except Exception:
     PT_AVAILABLE = False
 
 from dotenv import load_dotenv
-from rich.console import Console
+from rich.console import Console, Group
+from rich.live import Live
+from rich.text import Text
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.syntax import Syntax
@@ -73,6 +75,62 @@ def _safe_env_value(name: str, default: str | None = None) -> str:
     return raw
 
 
+class ChatStreamingDisplay:
+    def __init__(self, console: Console, show_analysis: bool):
+        self.console = console
+        self.show_analysis = show_analysis
+        self.sql: str | None = None
+        self.status: str = "[cyan]Iniciando...[/cyan]"
+        self.analysis: str = ""
+        self.error: str | None = None
+        self.live: Live | None = None
+
+    def start(self) -> None:
+        self.live = Live(self._render(), console=self.console, refresh_per_second=4)
+        self.live.start()
+
+    def stop(self) -> None:
+        if self.live:
+            self.live.stop()
+            self.live = None
+
+    def update(self, chunk_info: dict) -> None:
+        chunk_type = chunk_info.get("type")
+        content = chunk_info.get("content", "")
+
+        if chunk_type == "sql":
+            self.sql = content
+            self.status = "[cyan]Generando SQL...[/cyan]"
+        elif chunk_type in ("execution", "data"):
+            self.status = "[green]Ejecutando query...[/green]"
+        elif chunk_type == "analysis" and self.show_analysis:
+            if content:
+                self.analysis += str(content)
+            self.status = "[yellow]Generando análisis...[/yellow]"
+        elif chunk_type == "error":
+            self.error = str(content)
+            self.status = "[red]Error[/red]"
+
+        if self.live:
+            self.live.update(self._render())
+
+    def _render(self):
+        sql_panel = Panel(
+            Syntax(self.sql, "sql", theme="monokai", line_numbers=False) if self.sql else Text("Esperando SQL...", style="dim"),
+            title="SQL",
+            border_style="cyan",
+        )
+        status_panel = Panel(Text(self.status), title="Estado", border_style="blue")
+        items = [sql_panel, status_panel]
+        if self.show_analysis:
+            analysis_panel = Panel(Text(self.analysis or "…", style="white"), title="Análisis", border_style="yellow")
+            items.append(analysis_panel)
+        if self.error:
+            error_panel = Panel(Text(self.error, style="red"), title="Error", border_style="red")
+            items.append(error_panel)
+        return Group(*items)
+
+
 class ChatApp:
     def __init__(
         self,
@@ -103,6 +161,8 @@ class ChatApp:
             "tokens_input": 0,
             "tokens_output": 0,
         }
+        self.analysis_enabled = os.getenv("ANALYSIS_ENABLED", "true").lower() in ("true", "1", "yes", "on")
+        self.streaming_enabled = os.getenv("CHAT_STREAM", "true").lower() in ("true", "1", "yes", "on")
         self.commands_info: list[tuple[str, str]] = [
             ("/config", "cambiar ajustes interactivos"),
             ("/setup", "alias de config"),
@@ -228,7 +288,34 @@ class ChatApp:
             self.console.print("[yellow]Otra ejecución similar está en curso; intenta de nuevo en unos segundos.[/yellow]")
             return
         try:
-            result = execute_query(self.agent, enriched_prompt, return_metadata=True, stream=False)
+            prefer_analysis = self.analysis_enabled
+            if self.streaming_enabled:
+                display = ChatStreamingDisplay(self.console, show_analysis=self.analysis_enabled)
+                display.start()
+
+                def stream_callback(chunk_info: dict):
+                    display.update(chunk_info)
+
+                try:
+                    result = execute_query(
+                        self.agent,
+                        enriched_prompt,
+                        return_metadata=True,
+                        stream=True,
+                        stream_callback=stream_callback,
+                        prefer_analysis=prefer_analysis,
+                    )
+                finally:
+                    display.stop()
+            else:
+                with self.console.status("[cyan]Generando y ejecutando...[/cyan]", spinner="dots"):
+                    result = execute_query(
+                        self.agent,
+                        enriched_prompt,
+                        return_metadata=True,
+                        stream=False,
+                        prefer_analysis=prefer_analysis,
+                    )
         except SQLValidationError as e:
             self.console.print(f"[red]Validation error:[/red] {e.message}")
             return
@@ -254,7 +341,14 @@ class ChatApp:
             self.last_result = response
             self._print_metadata(sql_generated, result)
             self._render_response(response)
-            save_query(prompt, sql_generated, str(response) if response else None, success=result.get("success", True))
+            save_query(
+                prompt,
+                sql_generated,
+                str(response) if response else None,
+                success=result.get("success", True),
+                cache_hit_type=result.get("cache_hit_type"),
+                model_used=result.get("model_used"),
+            )
             self._record_stats(result)
         else:
             self.last_result = result
@@ -344,7 +438,11 @@ class ChatApp:
         model = os.getenv("OPENAI_MODEL", "gpt-4o")
         self.console.print(Panel("Chat CLI ready. Type a question or /help-like commands (/schema, /history, /sql, /exit).",
                                  title="LLM DW Chat", border_style="blue"))
-        self.console.print(f"[dim]DB: {db_url} | Model: {model} | Mode: {self.mode} | Limit: {self.limit} | Timeout: {self.timeout}s[/dim]")
+        self.console.print(
+            f"[dim]DB: {db_url} | Model: {model} | Mode: {self.mode} | "
+            f"Limit: {self.limit} | Timeout: {self.timeout}s | "
+            f"Analysis: {'on' if self.analysis_enabled else 'off'} | Stream: {'on' if self.streaming_enabled else 'off'}[/dim]"
+        )
 
     def _print_settings(self) -> None:
         items = [
@@ -352,6 +450,8 @@ class ChatApp:
             f"format={self.output_format}",
             f"limit={self.limit}",
             f"timeout={self.timeout}",
+            f"analysis={'on' if self.analysis_enabled else 'off'}",
+            f"stream={'on' if self.streaming_enabled else 'off'}",
         ]
         self.console.print("[cyan]" + " | ".join(items) + "[/cyan]")
 
@@ -404,13 +504,15 @@ class ChatApp:
                     f"1) mode    : {self.mode}\n"
                     f"2) format  : {self.output_format}\n"
                     f"3) limit   : {self.limit}\n"
-                    f"4) timeout : {self.timeout}s\n\n"
+                    f"4) timeout : {self.timeout}s\n"
+                    f"5) analysis: {'on' if self.analysis_enabled else 'off'}\n"
+                    f"6) stream  : {'on' if self.streaming_enabled else 'off'}\n\n"
                     "Elige un número para editar o 'done' para salir.",
                     title="Config actual",
                     border_style="cyan",
                 )
                 self.console.print(panel)
-                choice = Prompt.ask("Selecciona (1-4/done)", choices=["1", "2", "3", "4", "done"], default="done")
+                choice = Prompt.ask("Selecciona (1-6/done)", choices=["1", "2", "3", "4", "5", "6", "done"], default="done")
                 if choice == "done":
                     self.console.print("[green]Configuración actualizada[/green]")
                     self._print_settings()
@@ -433,6 +535,12 @@ class ChatApp:
                         self.timeout = int(val)
                     else:
                         self.console.print("[yellow]Timeout inválido; se mantiene el actual[/yellow]")
+                elif choice == "5":
+                    val = Prompt.ask("analysis", choices=["on", "off"], default="on" if self.analysis_enabled else "off", show_choices=True)
+                    self.analysis_enabled = val == "on"
+                elif choice == "6":
+                    val = Prompt.ask("stream", choices=["on", "off"], default="on" if self.streaming_enabled else "off", show_choices=True)
+                    self.streaming_enabled = val == "on"
         except (KeyboardInterrupt, EOFError):
             self.console.print("\n[yellow]Configuración cancelada[/yellow]")
 
@@ -451,6 +559,10 @@ class ChatApp:
             self.timeout = int(value)
         elif key == "format" and value in ("table", "json", "text"):
             self.output_format = value
+        elif key == "analysis" and value.lower() in ("on", "off", "true", "false", "1", "0", "yes", "no"):
+            self.analysis_enabled = value.lower() in ("on", "true", "1", "yes")
+        elif key == "stream" and value.lower() in ("on", "off", "true", "false", "1", "0", "yes", "no"):
+            self.streaming_enabled = value.lower() in ("on", "true", "1", "yes")
         else:
             self.console.print(f"[yellow]Unsupported setting:[/yellow] {expr}")
             return

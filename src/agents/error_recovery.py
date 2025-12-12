@@ -1,12 +1,11 @@
 """Agente para recuperación automática de errores SQL."""
 
-import os
 import re
 from typing import Any, Optional
 
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
 
+from src.utils.llm_factory import get_chat_model
 from src.utils.logger import logger
 
 # Cargar variables de entorno
@@ -55,8 +54,7 @@ def recover_from_error(
         # Si no hay patrón conocido, usar LLM para generar corrección
         logger.info(f"No hay patrón conocido, generando corrección con LLM (tipo: {error_type})")
         
-        model_name = os.getenv("OPENAI_MODEL", "gpt-4o")
-        llm = ChatOpenAI(model=model_name, temperature=0)
+        llm = get_chat_model(temperature=0, require_tools=False)
         
         prompt = f"""Eres un experto en SQL y PostgreSQL. Una query SQL falló y necesitas corregirla.
 

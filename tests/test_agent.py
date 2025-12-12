@@ -9,10 +9,11 @@ from src.schemas.database_schema import DatabaseSchema
 from tests.conftest import mock_agent, mock_engine, sample_schema
 
 
-@patch("src.agents.sql_agent.ChatOpenAI")
+@patch("src.agents.sql_agent.create_agent")
+@patch("src.agents.sql_agent.get_chat_model")
 @patch("src.agents.sql_agent.SQLDatabase")
 @patch("src.agents.sql_agent.SQLDatabaseToolkit")
-def test_create_sql_agent(mock_toolkit, mock_db, mock_chat_openai, mock_engine, sample_schema):
+def test_create_sql_agent(mock_toolkit, mock_db, mock_get_chat_model, mock_create_agent, mock_engine, sample_schema):
     """Test: Creación del agente SQL."""
     # Configurar mocks
     mock_toolkit_instance = MagicMock()
@@ -20,6 +21,11 @@ def test_create_sql_agent(mock_toolkit, mock_db, mock_chat_openai, mock_engine, 
     mock_tool = MagicMock()
     mock_tool.name = "sql_db_query"
     mock_toolkit_instance.get_tools.return_value = [mock_tool]
+
+    llm_instance = MagicMock()
+    llm_instance.bind_tools.return_value = llm_instance
+    mock_get_chat_model.return_value = llm_instance
+    mock_create_agent.return_value = MagicMock()
 
     # Crear agente
     agent = create_sql_agent(mock_engine, sample_schema)

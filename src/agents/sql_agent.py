@@ -2,6 +2,7 @@
 
 import os
 import time
+from contextvars import ContextVar
 from typing import Any
 
 from dotenv import load_dotenv
@@ -9,8 +10,8 @@ from langchain.agents import create_agent
 from langchain.tools import tool as tool_decorator
 from langchain_community.agent_toolkits import SQLDatabaseToolkit
 from langchain_community.utilities import SQLDatabase
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import ToolMessage
-from langchain_openai import ChatOpenAI
 from sqlalchemy import Engine
 
 from src.agents.error_recovery import recover_from_error, should_attempt_recovery
@@ -19,12 +20,19 @@ from src.utils.ml_classifier import classify_query_complexity_ml
 from src.utils.cache import get_cached_result, set_cached_result
 from src.utils.telemetry import record_query_metrics, record_token_usage
 from src.utils.few_shot_examples import get_relevant_examples, format_examples_for_prompt
+from src.utils.llm_factory import bind_tools_safe, get_chat_model, get_default_model_name, normalize_provider
 from src.utils.logger import logger
 from src.utils.semantic_cache import get_semantic_cached_result, set_semantic_cached_result
 from src.validators.sql_validator import SQLValidator
 
 # Cargar variables de entorno
 load_dotenv()
+
+
+_SQL_EXECUTION_INFO: ContextVar[tuple[str, bool] | None] = ContextVar(
+    "_SQL_EXECUTION_INFO",
+    default=None,
+)
 
 
 def _select_candidate_tables(schema: DatabaseSchema, question: str, max_tables: int = 5) -> list[str]:
@@ -113,22 +121,23 @@ def _classify_query_complexity(question: str) -> str:
     if has_simple_keywords and word_count <= 10:
         return "simple"
     
-    # Si es muy corta (<=6 palabras) y tiene keywords simples, es simple
-    if word_count <= 6 and has_simple_keywords:
-        return "simple"
-    
     # Por defecto, asumir compleja para seguridad (mejor precisión que velocidad)
     return "complex"
 
 
-def create_sql_agent(engine: Engine, schema: DatabaseSchema, llm: ChatOpenAI | None = None, question: str | None = None) -> Any:
+def create_sql_agent(
+    engine: Engine,
+    schema: DatabaseSchema,
+    llm: BaseChatModel | None = None,
+    question: str | None = None,
+) -> Any:
     """
     Crea un agente LangChain para consultas SQL con validaci?n estricta.
 
     Args:
         engine: SQLAlchemy Engine con conexi?n a la base de datos
         schema: DatabaseSchema con las tablas y columnas permitidas
-        llm: Modelo LLM (opcional, usa gpt-4o por defecto)
+        llm: Modelo LLM (opcional, se crea desde variables de entorno)
 
     Returns:
         Agente LangChain configurado
@@ -136,10 +145,14 @@ def create_sql_agent(engine: Engine, schema: DatabaseSchema, llm: ChatOpenAI | N
     # Inicializar LLM si no se proporciona
     if llm is None:
         # Model selection inteligente: usar gpt-4o-mini para queries simples
+        provider = normalize_provider()
+        default_model = get_default_model_name(provider)
+        fast_model_default = "gpt-4o-mini" if provider == "openai" else default_model
+        complex_model_default = "gpt-4o" if provider == "openai" else default_model
+
         use_fast_model = os.getenv("USE_FAST_MODEL", "true").lower() in ("true", "1", "yes")
-        fast_model = os.getenv("FAST_MODEL", "gpt-4o-mini")
-        complex_model = os.getenv("COMPLEX_MODEL", "gpt-4o")
-        default_model = os.getenv("OPENAI_MODEL", "gpt-4o")
+        fast_model = os.getenv("FAST_MODEL", fast_model_default)
+        complex_model = os.getenv("COMPLEX_MODEL", complex_model_default)
         
         if use_fast_model and question:
             # FASE E: Usar clasificador ML mejorado
@@ -166,21 +179,21 @@ def create_sql_agent(engine: Engine, schema: DatabaseSchema, llm: ChatOpenAI | N
         # Configurar prompt caching si est? habilitado
         # OpenAI cachea autom?ticamente prefijos >1024 tokens
         # El schema + reglas deber?an ser >1024 tokens para aprovechar caching
-        llm_kwargs = {
-            "model": model_name,
-            "temperature": 0,
-            "max_tokens": None,
-        }
-        
         # Intentar habilitar prompt caching si est? disponible y habilitado
         enable_prompt_caching = os.getenv("ENABLE_PROMPT_CACHING", "true").lower() in ("true", "1", "yes")
-        if enable_prompt_caching:
+        if enable_prompt_caching and provider == "openai":
             # Nota: LangChain puede no exponer cache_control directamente
             # OpenAI API soporta prompt caching autom?tico para prefijos >1024 tokens
             # Aseguramos que el prefijo (schema + reglas) sea consistente
             logger.debug("Prompt caching habilitado (requiere prefijo >1024 tokens)")
         
-        llm = ChatOpenAI(**llm_kwargs)
+        llm = get_chat_model(
+            model_name=model_name,
+            provider=provider,
+            temperature=0,
+            max_tokens=None,
+            require_tools=True,
+        )
 
     # Crear SQLDatabase wrapper
     db = SQLDatabase(engine)
@@ -230,6 +243,7 @@ def create_sql_agent(engine: Engine, schema: DatabaseSchema, llm: ChatOpenAI | N
             cached_result = get_cached_result(query)
             if cached_result is not None:
                 logger.info("Resultado obtenido del SQL cache")
+                _SQL_EXECUTION_INFO.set((query, True))
                 return cached_result
 
             # Ejecutar query con timeout
@@ -269,6 +283,7 @@ def create_sql_agent(engine: Engine, schema: DatabaseSchema, llm: ChatOpenAI | N
                     cache_hit=False
                 )
                 
+                _SQL_EXECUTION_INFO.set((query, False))
                 return formatted_result
 
             except Exception as db_error:
@@ -310,6 +325,7 @@ def create_sql_agent(engine: Engine, schema: DatabaseSchema, llm: ChatOpenAI | N
                                     formatted_result = "No se encontraron datos que coincidan con la consulta."
                                     logger.info("Query corregida ejecutada exitosamente pero sin resultados. Retornando mensaje formateado.")
                                     set_cached_result(corrected_sql, formatted_result)
+                                    _SQL_EXECUTION_INFO.set((corrected_sql, False))
                                     return formatted_result
                                 else:
                                     # Guardar en cache
@@ -331,6 +347,7 @@ def create_sql_agent(engine: Engine, schema: DatabaseSchema, llm: ChatOpenAI | N
                                 )
 
                                 
+                                _SQL_EXECUTION_INFO.set((corrected_sql, False))
                                 return result
                                 
                             except Exception as validation_error:
@@ -367,7 +384,7 @@ def create_sql_agent(engine: Engine, schema: DatabaseSchema, llm: ChatOpenAI | N
 
     # Configurar LLM con tool_choice para forzar ejecuci?n de herramientas
     # tool_choice="any" fuerza al modelo a usar al menos una herramienta cuando sea apropiado
-    llm_with_tools = llm.bind_tools(validated_tools, tool_choice="any")
+    llm_with_tools = bind_tools_safe(llm, validated_tools, tool_choice="any")
 
     # Crear agente con LLM configurado para forzar tool execution
     agent = create_agent(
@@ -580,6 +597,7 @@ def execute_query(
     return_metadata: bool = False,
     stream: bool = False,
     stream_callback: Any | None = None,
+    prefer_analysis: bool = True,
 ) -> str | dict[str, Any]:
     """
     Ejecuta una pregunta en lenguaje natural usando el agente con retry logic.
@@ -593,11 +611,14 @@ def execute_query(
         stream_callback: Callback opcional para recibir información de streaming en tiempo real.
                         Recibe dict con keys: 'type' (sql|execution|data|analysis|error), 
                         'content' (contenido del chunk), 'complete' (bool)
+        prefer_analysis: Si False, prioriza datos de ToolMessage sobre análisis del LLM.
 
     Returns:
         Respuesta del agente (str) o dict con respuesta y metadata si return_metadata=True
     """
     logger.info(f"Ejecutando pregunta: {question}")
+    # Limpia el estado por-ejecución para detección de cache hit SQL.
+    _SQL_EXECUTION_INFO.set(None)
 
     # Estrategia optimizada de cache: SQL cache primero (más rápido), luego semantic cache
     # Nota: Para la primera query no tenemos SQL, así que semantic cache tiene sentido
@@ -628,10 +649,6 @@ def execute_query(
             logger.warning(f"Error al verificar semantic cache: {e}. Continuando...")
 
     last_error = None
-    # Detectar loops: rastrear queries ejecutadas y resultados vacíos repetidos
-    executed_queries = []
-    empty_results_count = 0
-    max_empty_results = 3  # Máximo de resultados vacíos antes de detener
     
     for attempt in range(max_retries):
         try:
@@ -678,6 +695,7 @@ def execute_query(
             tokens_output = None
             tokens_total = None
             model_used = None
+            cache_hit_type = "none"
             
             if "messages" in result:
                 messages = result["messages"]
@@ -707,47 +725,46 @@ def execute_query(
                                     sql_generated = args.get("query")
                                     break
                     
-                    # Priorizar AIMessage con análisis sobre ToolMessage (solo datos)
-                    # Buscar primero AIMessage que tenga contenido analítico (no solo tool calls)
+                    # Selección de respuesta: análisis vs datos
                     from langchain_core.messages import AIMessage
                     
-                    for msg in reversed(messages):
-                        if isinstance(msg, AIMessage) and hasattr(msg, "content") and msg.content:
-                            # Verificar que no sea solo un tool call
-                            has_tool_calls = hasattr(msg, "tool_calls") and msg.tool_calls
-                            content = msg.content
-                            
-                            # Si tiene contenido y no es solo un tool call, verificar si tiene análisis
-                            if not has_tool_calls or (has_tool_calls and len(str(content)) > 100):
-                                # Verificar si el contenido parece ser análisis (más que solo datos)
-                                content_str = str(content).strip()
-                                is_analysis = (
-                                    len(content_str) > 100 and  # Contenido significativo
-                                    not content_str.startswith("[") and  # No es solo una lista
-                                    not content_str.startswith("(") and  # No es solo una tupla
-                                    ("análisis" in content_str.lower() or
-                                     "conclusión" in content_str.lower() or
-                                     "insight" in content_str.lower() or
-                                     "recomendación" in content_str.lower() or
-                                     len(content_str.split()) > 20)  # Texto sustancial
-                                )
-                                
-                                if is_analysis:
-                                    response = content_str
-                                    logger.info(f"Respuesta con análisis encontrada: {len(response)} caracteres")
-                                    break
+                    if prefer_analysis:
+                        for msg in reversed(messages):
+                            if isinstance(msg, AIMessage) and hasattr(msg, "content") and msg.content:
+                                has_tool_calls = hasattr(msg, "tool_calls") and msg.tool_calls
+                                content = msg.content
+                                if not has_tool_calls or (has_tool_calls and len(str(content)) > 100):
+                                    content_str = str(content).strip()
+                                    is_analysis = (
+                                        len(content_str) > 100 and
+                                        not content_str.startswith("[") and
+                                        not content_str.startswith("(") and
+                                        ("análisis" in content_str.lower() or
+                                         "conclusión" in content_str.lower() or
+                                         "insight" in content_str.lower() or
+                                         "recomendación" in content_str.lower() or
+                                         len(content_str.split()) > 20)
+                                    )
+                                    if is_analysis:
+                                        response = content_str
+                                        logger.info(f"Respuesta con análisis encontrada: {len(response)} caracteres")
+                                        break
+                    else:
+                        for msg in reversed(messages):
+                            if isinstance(msg, ToolMessage) and getattr(msg, "content", None):
+                                response = msg.content
+                                logger.info(f"Resultado de herramienta ejecutada: {len(str(response))} caracteres")
+                                break
                     
-                    # Si no hay AIMessage con análisis, buscar ToolMessage con datos
+                    # Si aún no hay respuesta, buscar ToolMessage con datos
                     if not response:
                         for msg in reversed(messages):
-                            if isinstance(msg, ToolMessage):
-                                # ToolMessage contiene el resultado de la ejecuci?n de la herramienta
-                                if msg.content:
-                                    response = msg.content
-                                    logger.info(
-                                        f"Resultado de herramienta ejecutada: {len(response)} caracteres"
-                                    )
-                                    break
+                            if isinstance(msg, ToolMessage) and getattr(msg, "content", None):
+                                response = msg.content
+                                logger.info(
+                                    f"Resultado de herramienta ejecutada: {len(str(response))} caracteres"
+                                )
+                                break
                     
                     # Si aún no hay respuesta, buscar cualquier mensaje con contenido
                     if not response:
@@ -770,52 +787,14 @@ def execute_query(
                 else:
                     response = str(result)
 
-            # Detectar loops: verificar si estamos generando queries repetidamente con resultados vacíos
-            if sql_generated:
-                # Normalizar SQL para comparación (remover espacios extras, convertir a minúsculas)
-                normalized_sql = " ".join(sql_generated.strip().lower().split())
-                
-                # Verificar si esta query ya fue ejecutada
-                if normalized_sql in executed_queries:
-                    logger.warning(
-                        f"Query duplicada detectada. El agente está generando la misma query repetidamente. "
-                        f"Deteniendo para evitar loop infinito."
-                    )
-                    # Si ya tenemos una respuesta (aunque esté vacía), retornarla
-                    if response:
-                        return response
-                    # Si no hay respuesta, retornar mensaje apropiado
-                    return "No se encontraron datos que coincidan con la consulta."
-                
-                # Agregar query a la lista de ejecutadas
-                executed_queries.append(normalized_sql)
-                
-                # Verificar si el resultado está vacío
-                response_str = str(response).strip() if response else ""
-                is_empty = (
-                    not response_str or 
-                    response_str == "[]" or 
-                    response_str == "" or
-                    response_str == "No se encontraron datos que coincidan con la consulta."
-                )
-                
-                if is_empty and not response.startswith("Error"):
-                    empty_results_count += 1
-                    logger.info(
-                        f"Resultado vacío detectado ({empty_results_count}/{max_empty_results}). "
-                        f"Si se alcanza el límite, se detendrá el agente."
-                    )
-                    
-                    # Si hemos tenido demasiados resultados vacíos, detener
-                    if empty_results_count >= max_empty_results:
-                        logger.warning(
-                            f"Se detectaron {max_empty_results} resultados vacíos consecutivos. "
-                            f"Deteniendo agente para evitar loop infinito."
-                        )
-                        return "No se encontraron datos que coincidan con la consulta."
-                else:
-                    # Resetear contador si hay resultados o errores
-                    empty_results_count = 0
+            # Ajustar SQL/caché según la herramienta realmente ejecutada (incluye correcciones).
+            exec_info = _SQL_EXECUTION_INFO.get()
+            if exec_info:
+                executed_sql, was_sql_cache_hit = exec_info
+                if executed_sql:
+                    sql_generated = executed_sql
+                if was_sql_cache_hit:
+                    cache_hit_type = "sql"
 
             # Guardar en semantic cache si la query fue exitosa
             if sql_generated and response and not response.startswith("Error"):
@@ -838,17 +817,6 @@ def execute_query(
                                 rows_returned = len(parsed)
                         except:
                             pass
-                    
-                    # Determinar cache hit type
-                    cache_hit_type = "none"
-                    if semantic_cache_result:
-                        cache_hit_type = "semantic"
-                    elif sql_generated:
-                        # Verificar si fue cache hit de SQL cache
-                        from src.utils.cache import get_cached_result
-                        cached = get_cached_result(sql_generated)
-                        if cached is not None:
-                            cache_hit_type = "sql"
                     
                     record_query_performance(
                         sql=sql_generated,
@@ -889,7 +857,7 @@ def execute_query(
                     "tokens_input": tokens_input,
                     "tokens_output": tokens_output,
                     "tokens_total": tokens_total,
-                    "cache_hit_type": cache_hit_type if 'cache_hit_type' in locals() else "none",
+                    "cache_hit_type": cache_hit_type,
                     "model_used": model_used,
                 }
             

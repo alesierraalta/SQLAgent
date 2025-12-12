@@ -137,6 +137,78 @@ def test_trace_decorator_with_exception():
             failing_func()
 
 
+def test_lazy_init_handles_import_error(monkeypatch):
+    """Cubre rama ImportError en _lazy_init."""
+    monkeypatch.setenv("ENABLE_TELEMETRY", "true")
+    manager = TelemetryManager()
+
+    real_import = __import__
+
+    def fake_import(name, *args, **kwargs):
+        if name.startswith("opentelemetry"):
+            raise ImportError("missing")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+    assert manager._lazy_init() is False
+
+
+def test_lazy_init_handles_generic_exception(monkeypatch):
+    """Cubre rama Exception genérica en _lazy_init."""
+    monkeypatch.setenv("ENABLE_TELEMETRY", "true")
+    manager = TelemetryManager()
+
+    real_import = __import__
+
+    def fake_import(name, *args, **kwargs):
+        if name.startswith("opentelemetry"):
+            raise RuntimeError("boom")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+    assert manager._lazy_init() is False
+
+
+def test_create_metrics_returns_when_no_meter():
+    """Cubre retorno temprano de _create_metrics."""
+    manager = TelemetryManager()
+    manager._create_metrics()
+
+
+def test_record_query_cache_hit_branch(monkeypatch):
+    """Cubre rama cache_hit en record_query."""
+    manager = TelemetryManager()
+    monkeypatch.setattr(manager, "_lazy_init", lambda: True)
+    manager.cache_hit_counter = MagicMock()
+
+    manager.record_query(duration=0.1, success=True, cache_hit=True)
+    manager.cache_hit_counter.add.assert_called_once()
+
+
+def test_trace_function_records_exception_when_enabled(monkeypatch):
+    """Cubre rama de excepción dentro de trace_function."""
+    manager = TelemetryManager()
+    monkeypatch.setattr(manager, "_lazy_init", lambda: True)
+
+    span = MagicMock()
+    cm = MagicMock()
+    cm.__enter__.return_value = span
+    cm.__exit__.return_value = False
+
+    tracer = MagicMock()
+    tracer.start_as_current_span.return_value = cm
+    manager.tracer = tracer
+
+    @manager.trace_function("span_test")
+    def boom():
+        raise ValueError("x")
+
+    with pytest.raises(ValueError):
+        boom()
+
+    span.record_exception.assert_called_once()
+
+
 # Tests condicionales (solo si OpenTelemetry está instalado)
 try:
     import opentelemetry
