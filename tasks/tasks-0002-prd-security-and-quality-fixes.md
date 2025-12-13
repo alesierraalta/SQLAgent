@@ -8,14 +8,14 @@
 ## Tasks
 
 - [x] 1.0 Security Remediation
-    - [x] 1.1 Run `npm audit fix --force` in `frontend/` to attempt automatic remediation of the `glob` vulnerability.
-    - [x] 1.2 Review `package.json` changes. If `eslint-config-next` was upgraded to v15+ (breaking change risk), try to verify compatibility. If it breaks, manually install a compatible non-vulnerable version if available, or keep the upgrade and fix config.
+    - [x] 1.1 Run `npm audit fix --force` in `frontend/` to attempt automatic remediation of the `glob` vulnerability. (Initial attempt failed due to peer dependency, but `overrides` fixed it).
+    - [x] 1.2 Review `package.json` changes. Applied `overrides` for `glob` to version `11.1.0`.
     - [x] 1.3 Verify `npm audit` returns 0 high vulnerabilities.
 
 - [ ] 2.0 Linting Fixes
-    - [ ] 2.1 Analyze `useEffect` at line 59 in `terminal.tsx`. Use `useRef` for `sequence` if it's a stable object that shouldn't trigger re-renders, or add it to dependencies if safe.
-    - [ ] 2.2 Analyze `useEffect` at line 142 in `terminal.tsx`. Apply similar fix (ref or dependency).
-    - [ ] 2.3 Analyze `useEffect` at line 171 in `terminal.tsx`. Add `itemIndex` and `sequence` to dependencies or refactor logic.
+    - [x] 2.1 Analyze `useEffect` at line 59 in `terminal.tsx`. Add `sequence` to dependencies.
+    - [x] 2.2 Analyze `useEffect` at line 142 in `terminal.tsx`. Add `sequence` to dependencies.
+    - [x] 2.3 Analyze `useEffect` at line 171 in `terminal.tsx`. Add `itemIndex` and `sequence` to dependencies.
     - [ ] 2.4 Verify `npm run lint` passes with no warnings.
 
 - [ ] 3.0 Verification
