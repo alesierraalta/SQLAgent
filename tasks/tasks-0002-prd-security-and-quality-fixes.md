@@ -12,11 +12,11 @@
     - [x] 1.2 Review `package.json` changes. Applied `overrides` for `glob` to version `11.1.0`.
     - [x] 1.3 Verify `npm audit` returns 0 high vulnerabilities.
 
-- [ ] 2.0 Linting Fixes
+- [x] 2.0 Linting Fixes
     - [x] 2.1 Analyze `useEffect` at line 59 in `terminal.tsx`. Add `sequence` to dependencies.
     - [x] 2.2 Analyze `useEffect` at line 142 in `terminal.tsx`. Add `sequence` to dependencies.
     - [x] 2.3 Analyze `useEffect` at line 171 in `terminal.tsx`. Add `itemIndex` and `sequence` to dependencies.
-    - [ ] 2.4 Verify `npm run lint` passes with no warnings.
+    - [x] 2.4 Verify `npm run lint` passes with no warnings.
 
 - [ ] 3.0 Verification
     - [ ] 3.1 Run `npm run build` to ensure the application builds successfully.
