@@ -4,35 +4,29 @@ import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Terminal, AnimatedSpan } from "@/components/magicui/terminal";
-import { ShimmerButton } from "@/components/magicui/shimmer-button";
-import { CopyButton } from "@/components/magicui/copy-button";
 import { BentoGrid } from "@/components/magicui/bento-grid";
 import { DotPattern } from "@/components/magicui/dot-pattern";
 import { TerminalSkeleton } from "@/components/skeletons/terminal-skeleton";
 import { TableSkeleton } from "@/components/skeletons/table-skeleton";
 import { QueryResultTable } from "@/components/query-result-table";
-import { ViewSettings } from "@/components/view-settings";
+import { ChatInput } from "@/components/chat-input";
 import { queryApi, type QueryResponse } from "@/lib/api";
 import { startQueryStream } from "@/lib/sse";
 import { useSettingsStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { CopyButton } from "@/components/magicui/copy-button";
 
 export default function Page() {
   const settings = useSettingsStore();
-  const [question, setQuestion] = useState("");
-  const [limit, setLimit] = useState<number | "">("");
-  const [explain, setExplain] = useState(false);
-  const [streaming, setStreaming] = useState(false);
-
+  
   const [loading, setLoading] = useState(false);
+  const [isExecutingStream, setIsExecutingStream] = useState(false);
   const [result, setResult] = useState<QueryResponse | null>(null);
   const [sql, setSql] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const streamRef = useRef<{ close: () => void } | null>(null);
-
-  const canRun = useMemo(() => question.trim().length > 0 && !loading, [question, loading]);
 
   const reset = () => {
     setResult(null);
@@ -45,24 +39,32 @@ export default function Page() {
     streamRef.current?.close();
     streamRef.current = null;
     setLoading(false);
+    setIsExecutingStream(false);
   };
 
-  const run = async () => {
+  const run = async ({ 
+    question, 
+    limit, 
+    explain, 
+    streaming 
+  }: { 
+    question: string; 
+    limit: number | null; 
+    explain: boolean; 
+    streaming: boolean 
+  }) => {
     reset();
-    const questionClean = question.trim();
-    if (!questionClean) {
-      toast.error("La pregunta no puede estar vacía");
-      return;
-    }
+    // Validation is handled in ChatInput
 
     setLoading(true);
+    if (streaming) setIsExecutingStream(true);
 
     try {
       if (streaming) {
         streamRef.current = startQueryStream(
           {
-            question: questionClean,
-            limit: typeof limit === "number" ? limit : null,
+            question,
+            limit,
             explain
           },
           {
@@ -78,10 +80,11 @@ export default function Page() {
               // Fallback
               void (async () => {
                 setLoading(true);
+                setIsExecutingStream(false); // Fallback is not streaming
                 try {
                   const response = await queryApi({
-                    question: questionClean,
-                    limit: typeof limit === "number" ? limit : null,
+                    question,
+                    limit,
                     explain,
                     stream: false
                   });
@@ -112,8 +115,8 @@ export default function Page() {
       }
 
       const response = await queryApi({
-        question: questionClean,
-        limit: typeof limit === "number" ? limit : null,
+        question,
+        limit,
         explain,
         stream: false
       });
@@ -130,7 +133,9 @@ export default function Page() {
       setError(errMsg);
       toast.error("Error crítico", { description: errMsg });
     } finally {
-      if (!streaming) setLoading(false);
+      if (!streaming) {
+        setLoading(false);
+      }
     }
   };
 
@@ -158,71 +163,13 @@ export default function Page() {
         </div>
 
         <BentoGrid className="auto-rows-min grid-cols-1 md:grid-cols-3 md:auto-rows-auto">
-          {/* Input Area - Full Width */}
-          <div className="col-span-1 md:col-span-3 space-y-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4 shadow-sm">
-            <label className="block text-sm font-medium text-neutral-200">Pregunta</label>
-            <textarea
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              placeholder='Ej: "Top 10 productos por ventas"'
-              className="h-28 w-full rounded-md border border-neutral-800 bg-neutral-900 p-3 text-sm text-white outline-none focus:border-neutral-600 transition-colors"
-            />
-
-            <div className="flex flex-wrap items-center gap-4 text-sm text-neutral-200">
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={explain}
-                  onChange={(e) => setExplain(e.target.checked)}
-                  className="accent-white"
-                />
-                Explain
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={streaming}
-                  onChange={(e) => setStreaming(e.target.checked)}
-                  className="accent-white"
-                />
-                Streaming (SSE)
-              </label>
-              <label className="flex items-center gap-2">
-                Limit
-                <input
-                  type="number"
-                  min={1}
-                  max={10000}
-                  value={limit}
-                  onChange={(e) => setLimit(e.target.value ? Number(e.target.value) : "")}
-                  className="w-24 rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-sm text-white outline-none focus:border-neutral-600"
-                />
-              </label>
-
-              <div className="ml-auto flex items-center gap-2">
-                <ViewSettings />
-                {streaming && loading ? (
-                  <button
-                    onClick={stopStream}
-                    className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-800 transition-colors"
-                  >
-                    Detener
-                  </button>
-                ) : null}
-                <ShimmerButton 
-                  className="h-9 px-6" 
-                  background="#000000"
-                  shimmerColor="#ffffff"
-                  disabled={!canRun} 
-                  onClick={run}
-                >
-                  <span className="relative z-10 text-sm font-medium">
-                    {loading ? "Ejecutando..." : "Ejecutar"}
-                  </span>
-                </ShimmerButton>
-              </div>
-            </div>
-          </div>
+          {/* Input Area - Isolated Component */}
+          <ChatInput 
+            onRun={run} 
+            loading={loading} 
+            onStop={stopStream} 
+            isStreaming={isExecutingStream} 
+          />
 
           {error ? (
             <div className="col-span-1 md:col-span-3 rounded-lg border border-red-900/40 bg-red-950/40 p-4 text-sm text-red-200">
