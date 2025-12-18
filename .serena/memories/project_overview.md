@@ -1,5 +1,0 @@
-Proyecto: LLM Data Warehouse MVP.
-Propósito: Convertir preguntas en lenguaje natural (ES/EN) a SQL seguro sobre PostgreSQL, validando estrictamente comandos y schema, y ejecutando vía CLI moderna con Rich/Click. Incluye caching (semántico/SQL), retries, pooling y análisis de performance.
-Arquitectura: CLI (src/cli.py) -> carga schema (dinámico o estático en src/schemas/database_schema.py) -> crea engine (utils/database.py) -> crea SQL Agent (agents/sql_agent.py) con LangChain ChatOpenAI y SQLDatabaseToolkit -> genera prompt/SQL -> validador (validators/sql_validator.py) aplica whitelist y bloquea comandos peligrosos -> ejecuta en PostgreSQL -> formatea respuesta; historial y logging en utils.
-Entrypoints: `python -m src.cli` con subcomandos query/schema/validate-sql/history/stats/test-connection; script de datos `scripts/generate_test_data.py`.
-Requisitos: Python 3.8+, PostgreSQL, OpenAI API key. Config vía `.env` (ver .env.example).
