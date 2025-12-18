@@ -68,3 +68,6 @@ logs/
 *.temp
 test_output.txt
 =*
+
+# Serena
+.serena/
