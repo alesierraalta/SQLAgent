@@ -47,19 +47,17 @@ def test_generate_system_prompt_includes_relevant_subset(sample_schema, monkeypa
     assert "sales:" in prompt
 
 
-@patch("src.agents.sql_agent.create_agent")
-@patch("src.agents.sql_agent.get_chat_model")
-@patch("src.agents.sql_agent.SQLDatabase")
-@patch("src.agents.sql_agent.SQLDatabaseToolkit")
+@patch("src.agents.builder.create_agent")
+@patch("src.agents.builder.get_chat_model")
+@patch("src.agents.builder.SQLDatabase")
+@patch("src.agents.builder.SQLDatabaseToolkit")
 def test_create_sql_agent_uses_fast_model_for_simple_question(
     mock_toolkit, mock_db, mock_get_chat_model, mock_create_agent, mock_engine, sample_schema, monkeypatch
 ):
     monkeypatch.setenv("USE_FAST_MODEL", "true")
     monkeypatch.setenv("FAST_MODEL", "fast-model")
     monkeypatch.setenv("COMPLEX_MODEL", "complex-model")
-    monkeypatch.setenv("OPENAI_MODEL", "default-model")
-
-    monkeypatch.setattr(sql_agent, "classify_query_complexity_ml", lambda q: "simple")
+    monkeypatch.setattr("src.agents.builder.classify_query_complexity_ml", lambda q: "simple")
 
     llm_instance = MagicMock()
     llm_instance.bind_tools.return_value = llm_instance
@@ -78,10 +76,10 @@ def test_create_sql_agent_uses_fast_model_for_simple_question(
     assert mock_get_chat_model.call_args.kwargs["model_name"] == "fast-model"
 
 
-@patch("src.agents.sql_agent.create_agent")
-@patch("src.agents.sql_agent.get_chat_model")
-@patch("src.agents.sql_agent.SQLDatabase")
-@patch("src.agents.sql_agent.SQLDatabaseToolkit")
+@patch("src.agents.builder.create_agent")
+@patch("src.agents.builder.get_chat_model")
+@patch("src.agents.builder.SQLDatabase")
+@patch("src.agents.builder.SQLDatabaseToolkit")
 def test_create_sql_agent_uses_complex_model_for_complex_question(
     mock_toolkit, mock_db, mock_get_chat_model, mock_create_agent, mock_engine, sample_schema, monkeypatch
 ):
@@ -89,7 +87,7 @@ def test_create_sql_agent_uses_complex_model_for_complex_question(
     monkeypatch.setenv("FAST_MODEL", "fast-model")
     monkeypatch.setenv("COMPLEX_MODEL", "complex-model")
 
-    monkeypatch.setattr(sql_agent, "classify_query_complexity_ml", lambda q: "complex")
+    monkeypatch.setattr("src.agents.builder.classify_query_complexity_ml", lambda q: "complex")
 
     llm_instance = MagicMock()
     llm_instance.bind_tools.return_value = llm_instance
@@ -107,17 +105,17 @@ def test_create_sql_agent_uses_complex_model_for_complex_question(
     assert mock_get_chat_model.call_args.kwargs["model_name"] == "complex-model"
 
 
-@patch("src.agents.sql_agent.create_agent")
-@patch("src.agents.sql_agent.get_chat_model")
-@patch("src.agents.sql_agent.SQLDatabase")
-@patch("src.agents.sql_agent.SQLDatabaseToolkit")
+@patch("src.agents.builder.create_agent")
+@patch("src.agents.builder.get_chat_model")
+@patch("src.agents.builder.SQLDatabase")
+@patch("src.agents.builder.SQLDatabaseToolkit")
 def test_create_sql_agent_default_model_when_fast_disabled(
     mock_toolkit, mock_db, mock_get_chat_model, mock_create_agent, mock_engine, sample_schema, monkeypatch
 ):
     monkeypatch.setenv("USE_FAST_MODEL", "false")
     monkeypatch.setenv("OPENAI_MODEL", "default-model")
 
-    monkeypatch.setattr(sql_agent, "classify_query_complexity_ml", lambda q: (_ for _ in ()).throw(Exception("should not call")))
+    monkeypatch.setattr("src.agents.builder.classify_query_complexity_ml", lambda q: (_ for _ in ()).throw(Exception("should not call")))
 
     llm_instance = MagicMock()
     llm_instance.bind_tools.return_value = llm_instance
@@ -135,8 +133,8 @@ def test_create_sql_agent_default_model_when_fast_disabled(
     assert mock_get_chat_model.call_args.kwargs["model_name"] == "default-model"
 
 
-@patch("src.agents.sql_agent.SQLDatabase")
-@patch("src.agents.sql_agent.SQLDatabaseToolkit")
+@patch("src.agents.builder.SQLDatabase")
+@patch("src.agents.builder.SQLDatabaseToolkit")
 def test_create_sql_agent_raises_if_sql_tool_missing(
     mock_toolkit, mock_db, mock_engine, sample_schema
 ):
@@ -150,15 +148,15 @@ def test_create_sql_agent_raises_if_sql_tool_missing(
         sql_agent.create_sql_agent(mock_engine, sample_schema, llm=MagicMock())
 
 
-@patch("src.agents.sql_agent.create_agent")
-@patch("src.agents.sql_agent.get_chat_model")
-@patch("src.agents.sql_agent.SQLDatabase")
-@patch("src.agents.sql_agent.SQLDatabaseToolkit")
+@patch("src.agents.builder.create_agent")
+@patch("src.agents.builder.get_chat_model")
+@patch("src.agents.builder.SQLDatabase")
+@patch("src.agents.builder.SQLDatabaseToolkit")
 def test_create_sql_agent_keeps_non_sql_tools(
     mock_toolkit, mock_db, mock_get_chat_model, mock_create_agent, mock_engine, sample_schema, monkeypatch
 ):
     monkeypatch.setattr(sql_agent, "tool_decorator", lambda f: f)
-    monkeypatch.setattr(sql_agent, "classify_query_complexity_ml", lambda q: "simple")
+    monkeypatch.setattr("src.agents.builder.classify_query_complexity_ml", lambda q: "simple")
     monkeypatch.setenv("USE_FAST_MODEL", "false")
 
     llm_instance = MagicMock()

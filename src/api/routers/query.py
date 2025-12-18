@@ -82,11 +82,19 @@ async def query_stream_endpoint(
             loop.call_soon_threadsafe(events.put_nowait, {"event": "done", "data": response.model_dump()})
         except Exception as e:
             logger.exception("Error en /query/stream")
+            
+            # Generic message for production security
+            user_message = "An unexpected error occurred during processing."
+            
+            # Only show detailed error if explicitly allowed (dev mode)
+            if os.getenv("SHOW_DETAILED_ERRORS", "false").lower() == "true":
+                user_message = str(e)
+
             loop.call_soon_threadsafe(
                 events.put_nowait,
                 {
                     "event": "error",
-                    "data": {"code": "stream_exception", "message": str(e)},
+                    "data": {"code": "stream_exception", "message": user_message},
                 },
             )
         finally:

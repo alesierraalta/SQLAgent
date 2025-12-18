@@ -14,7 +14,7 @@ def test_execute_query_semantic_cache_hit_returns_result(monkeypatch: pytest.Mon
     monkeypatch.setenv("ENABLE_SEMANTIC_CACHE", "true")
 
     agent = MagicMock()
-    monkeypatch.setattr(sql_agent, "get_semantic_cached_result", lambda q: ("cached", "SELECT 1"))
+    monkeypatch.setattr("src.agents.executor.get_semantic_cached_result", lambda q: ("cached", "SELECT 1"))
 
     out = sql_agent.execute_query(agent, "ventas por pais")
     assert out == "cached"
@@ -25,7 +25,7 @@ def test_execute_query_semantic_cache_hit_returns_metadata(monkeypatch: pytest.M
     monkeypatch.setenv("ENABLE_SEMANTIC_CACHE", "true")
 
     agent = MagicMock()
-    monkeypatch.setattr(sql_agent, "get_semantic_cached_result", lambda q: ("cached", "SELECT 1"))
+    monkeypatch.setattr("src.agents.executor.get_semantic_cached_result", lambda q: ("cached", "SELECT 1"))
 
     out = sql_agent.execute_query(agent, "ventas por pais", return_metadata=True)
     assert isinstance(out, dict)
@@ -39,7 +39,7 @@ def test_execute_query_semantic_cache_error_falls_back(monkeypatch: pytest.Monke
     def boom(_q: str):
         raise Exception("boom")
 
-    monkeypatch.setattr(sql_agent, "get_semantic_cached_result", boom)
+    monkeypatch.setattr("src.agents.executor.get_semantic_cached_result", boom)
 
     agent = MagicMock()
     agent.invoke.return_value = {"messages": [AIMessage(content="ok")]}
@@ -161,7 +161,7 @@ def test_execute_query_handles_semantic_cache_set_error(monkeypatch: pytest.Monk
     agent = MagicMock()
     agent.invoke.return_value = {"messages": [sql_msg, tool_msg]}
 
-    monkeypatch.setattr(sql_agent, "set_semantic_cached_result", lambda *_a, **_k: (_ for _ in ()).throw(Exception("boom")))
+    monkeypatch.setattr("src.agents.executor.set_semantic_cached_result", lambda *_a, **_k: (_ for _ in ()).throw(Exception("boom")))
 
     out = sql_agent.execute_query(agent, "q")
     assert out == "ok"
@@ -177,10 +177,8 @@ def test_execute_query_records_sql_cache_hit_type(monkeypatch: pytest.MonkeyPatc
     tool_msg = ToolMessage(content="[(1,)]", tool_call_id="call1")
     agent = MagicMock()
 
-    import src.utils.performance as perf_module
-
     rec = MagicMock()
-    monkeypatch.setattr(perf_module, "record_query_performance", rec)
+    monkeypatch.setattr("src.agents.executor.record_query_performance", rec)
 
     def invoke(_payload):
         # Simula que la herramienta ejecutó desde cache SQL.
@@ -205,12 +203,10 @@ def test_execute_query_performance_metrics_error_is_caught(monkeypatch: pytest.M
     agent = MagicMock()
     agent.invoke.return_value = {"messages": [sql_msg, tool_msg]}
 
-    import src.utils.performance as perf_module
-
     def boom(*_a, **_k):
         raise Exception("perf boom")
 
-    monkeypatch.setattr(perf_module, "record_query_performance", boom)
+    monkeypatch.setattr("src.agents.executor.record_query_performance", boom)
 
     out = sql_agent.execute_query(agent, "q")
     assert out == "[(1,)]"

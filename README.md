@@ -440,10 +440,39 @@ DATABASE_URL=postgresql://usuario:password@host:puerto/nombre_db
 4. Push a la rama (`git push origin feature/AmazingFeature`)
 5. Abre un Pull Request
 
+
 ## Licencia
 
-Este proyecto es de código abierto y está disponible bajo la licencia MIT.
+Este proyecto es de código abierto y está disponible bajo la licencia [MIT](LICENSE).
 
 ## Soporte
 
 Para problemas o preguntas, abre un issue en el repositorio del proyecto.
+
+---
+
+## 📢 Post para LinkedIn
+
+¡Si te gusta este proyecto, ayúdame a compartirlo! Aquí tienes un borrador enfocado en tu desarrollo personal como ingeniero de IA:
+
+> **🧠 Construyendo puentes entre SQL y Lenguaje Natural: Mi viaje con Agentes de IA**
+>
+> Recientemente me propuse un reto técnico: diseñar un sistema capaz de democratizar el acceso a datos complejos sin comprometer la seguridad ni el rendimiento. Así nació **LLM Data Warehouse MVP**.
+>
+> Este proyecto no es solo un "traductor de texto a SQL"; es una implementación profunda de **patrones de arquitectura para IA**:
+>
+> 🧩 **Desafíos técnicos que resolví:**
+> *   **Determinismo vs. Creatividad:** Implementé un `SQLValidator` estricto que asegura que el LLM nunca ejecute comandos peligrosos, manteniendo la flexibilidad del lenguaje natural.
+> *   **Optimización de Costos y Latencia:** Integré un **Cache Semántico** (usando embeddings) para que las preguntas repetidas sean instantáneas y gratuitas.
+> *   **Robustez:** Diseñé un sistema de **Retry Logic** y recuperación de errores donde el agente aprende y corrige su propia sintaxis SQL.
+>
+> 🛠️ **Tech Stack:** Python, LangChain, PostgreSQL, SQLAlchemy, OpenAI, y Rich CLI.
+>
+> Este desarrollo me ha permitido profundizar en la ingeniería detrás de los agentes autónomos y la observabilidad con OpenTelemetry.
+>
+> 👨‍💻 **Código Open Source:**
+> [Link a tu repositorio GitHub]
+>
+> ¿Qué opinan sobre el uso de caches semánticos en producción? ¡Los leo en los comentarios! 👇
+>
+> #AI #MachineLearning #Python #DataEngineering #LLM #OpenSource #SoftwareArchitecture #DevOps

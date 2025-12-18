@@ -1,4 +1,4 @@
-"""Agente para recuperación automática de errores SQL."""
+"""Agent for automatic SQL error recovery."""
 
 import re
 from typing import Any, Optional
@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from src.utils.llm_factory import get_chat_model
 from src.utils.logger import logger
 
-# Cargar variables de entorno
+# Load environment variables
 load_dotenv()
 
 
@@ -18,23 +18,23 @@ def recover_from_error(
     schema_info: str,
 ) -> Optional[str]:
     """
-    Intenta recuperar una query SQL que falló analizando el error y generando una corrección.
+    Attempts to recover a failed SQL query by analyzing the error and generating a correction.
     
-    Primero busca en patrones conocidos (aprendizaje previo), luego usa LLM si es necesario.
+    First checks known patterns (prior learning), then uses LLM if necessary.
     
     Args:
-        original_sql: SQL original que falló
-        error_message: Mensaje de error de PostgreSQL
-        schema_info: Información del schema (tablas y columnas disponibles)
+        original_sql: Original SQL that failed
+        error_message: PostgreSQL error message
+        schema_info: Available schema information
         
     Returns:
-        SQL corregido o None si no se puede recuperar
+        Corrected SQL or None if recovery fails
     """
     try:
-        # Analizar el tipo de error
+        # Analyze the error type
         error_type = _classify_error(error_message)
         
-        # FASE D: Buscar corrección en patrones conocidos primero
+        # PHASE D: Search for correction in known patterns first
         from src.utils.error_patterns import get_error_pattern_store
         
         pattern_store = get_error_pattern_store()
@@ -46,13 +46,13 @@ def recover_from_error(
         
         if known_correction:
             logger.info(
-                f"Corrección encontrada en patrones conocidos (tipo: {error_type}). "
-                "Evitando llamada a LLM."
+                f"Correction found in known patterns (type: {error_type}). "
+                "Avoiding LLM call."
             )
             return known_correction
         
-        # Si no hay patrón conocido, usar LLM para generar corrección
-        logger.info(f"No hay patrón conocido, generando corrección con LLM (tipo: {error_type})")
+        # If no known pattern, use LLM to generate correction
+        logger.info(f"No known pattern, generating correction with LLM (type: {error_type})")
         
         llm = get_chat_model(temperature=0, require_tools=False)
         
@@ -80,26 +80,26 @@ Responde SOLO con el SQL corregido, sin explicaciones adicionales."""
         response = llm.invoke(prompt)
         corrected_sql = response.content.strip() if hasattr(response, 'content') else str(response).strip()
         
-        # Limpiar la respuesta (puede contener markdown code blocks)
+        # Clean the response (may contain markdown code blocks)
         corrected_sql = _clean_sql_response(corrected_sql)
         
-        logger.info(f"Query corregida generada: {corrected_sql[:100]}...")
+        logger.info(f"Corrected query generated: {corrected_sql[:100]}...")
         return corrected_sql
         
     except Exception as e:
-        logger.error(f"Error al generar query corregida: {e}")
+        logger.error(f"Error generating corrected query: {e}")
         return None
 
 
 def _classify_error(error_message: str) -> str:
     """
-    Clasifica el tipo de error SQL basado en el mensaje.
+    Classifies the SQL error type based on the message.
     
     Args:
-        error_message: Mensaje de error de PostgreSQL
+        error_message: PostgreSQL error message
         
     Returns:
-        Tipo de error clasificado
+        Classified error type
     """
     error_lower = error_message.lower()
     
@@ -121,37 +121,37 @@ def _classify_error(error_message: str) -> str:
 
 def _clean_sql_response(response: str) -> str:
     """
-    Limpia la respuesta del LLM para extraer solo el SQL.
+    Cleans the LLM response to extract only the SQL.
     
     Args:
-        response: Respuesta del LLM que puede contener markdown o explicaciones
+        response: LLM response that may contain markdown or explanations
         
     Returns:
-        SQL limpio
+        Clean SQL
     """
-    # Remover markdown code blocks
+    # Remove markdown code blocks
     sql = response
     
-    # Buscar SQL dentro de ```sql ... ```
+    # Search for SQL inside ```sql ... ```
     sql_block_match = re.search(r'```(?:sql)?\s*(.*?)\s*```', sql, re.DOTALL | re.IGNORECASE)
     if sql_block_match:
         sql = sql_block_match.group(1).strip()
     
-    # Remover líneas que parecen explicaciones (no empiezan con SELECT, WITH, etc.)
+    # Remove lines that look like explanations (don't start with SELECT, WITH, etc.)
     lines = sql.split('\n')
     cleaned_lines = []
     for line in lines:
         stripped = line.strip()
-        # Si la línea está vacía o es un comentario, mantenerla
+        # If line is empty or a comment, keep it
         if not stripped or stripped.startswith('--'):
             cleaned_lines.append(line)
-        # Si parece SQL (empieza con palabra clave SQL), mantenerla
+        # If it looks like SQL (starts with SQL keyword), keep it
         elif re.match(r'^\s*(SELECT|WITH|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|EXPLAIN)', stripped, re.IGNORECASE):
             cleaned_lines.append(line)
-        # Si contiene operadores SQL comunes, mantenerla
+        # If it contains common SQL operators, keep it
         elif any(op in stripped.upper() for op in ['FROM', 'WHERE', 'JOIN', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'UNION']):
             cleaned_lines.append(line)
-        # Si es parte de una expresión SQL (contiene paréntesis, comas, etc.), mantenerla
+        # If it is part of a SQL expression (contains parens, commas, etc.), keep it
         elif any(char in stripped for char in ['(', ')', ',', '=', '<', '>', "'", '"']):
             cleaned_lines.append(line)
     
@@ -160,19 +160,19 @@ def _clean_sql_response(response: str) -> str:
 
 def should_attempt_recovery(error_message: str) -> bool:
     """
-    Determina si se debe intentar recuperación automática basado en el tipo de error.
+    Determines if automatic recovery should be attempted based on the error type.
     
-    Algunos errores no son recuperables automáticamente (ej: permisos, conexión).
+    Some errors are not automatically recoverable (e.g., permissions, connection).
     
     Args:
-        error_message: Mensaje de error
+        error_message: Error message
         
     Returns:
-        True si se debe intentar recuperación, False en caso contrario
+        True if recovery should be attempted, False otherwise
     """
     error_lower = error_message.lower()
     
-    # Errores que NO son recuperables automáticamente
+    # Errors that are NOT automatically recoverable
     non_recoverable_patterns = [
         'permission denied',
         'connection',
@@ -189,7 +189,7 @@ def should_attempt_recovery(error_message: str) -> bool:
         if pattern in error_lower:
             return False
     
-    # Errores que SÍ son recuperables
+    # Errors that ARE recoverable
     recoverable_patterns = [
         'column',
         'table',
@@ -206,7 +206,7 @@ def should_attempt_recovery(error_message: str) -> bool:
         if pattern in error_lower:
             return True
     
-    # Por defecto, intentar recuperación para errores desconocidos
+    # Default to attempting recovery for unknown errors
     return True
 
 
@@ -216,12 +216,12 @@ def report_successful_correction(
     corrected_sql: str
 ) -> None:
     """
-    Reporta una corrección exitosa para aprendizaje futuro (Fase D).
+    Reports a successful correction for future learning (Phase D).
     
     Args:
-        original_sql: SQL original que falló
-        error_message: Mensaje de error
-        corrected_sql: SQL corregido que funcionó
+        original_sql: Original SQL that failed
+        error_message: Error message
+        corrected_sql: Corrected SQL that worked
     """
     from src.utils.error_patterns import get_error_pattern_store
     
@@ -235,4 +235,4 @@ def report_successful_correction(
         corrected_sql=corrected_sql
     )
     
-    logger.info(f"Corrección exitosa reportada para aprendizaje (tipo: {error_type})")
+    logger.info(f"Successful correction reported for learning (type: {error_type})")

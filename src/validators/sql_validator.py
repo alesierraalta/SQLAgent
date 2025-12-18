@@ -12,7 +12,7 @@ from src.utils.exceptions import (
     SQLValidationError,
 )
 
-# Comandos SQL peligrosos que no están permitidos
+# Dangerous SQL commands that are not allowed
 DANGEROUS_COMMANDS = {
     "DROP",
     "INSERT",
@@ -38,9 +38,9 @@ DANGEROUS_COMMANDS = {
     "REFRESH",
 }
 
-# Funciones SQL permitidas (whitelist)
+# Allowed SQL functions (whitelist)
 ALLOWED_FUNCTIONS = {
-    # Agregación
+    # Aggregation
     "SUM",
     "COUNT",
     "AVG",
@@ -48,7 +48,7 @@ ALLOWED_FUNCTIONS = {
     "MAX",
     "ARRAY_AGG",
     "STRING_AGG",
-    # Manipulación de strings
+    # String manipulation
     "UPPER",
     "LOWER",
     "TRIM",
@@ -57,7 +57,7 @@ ALLOWED_FUNCTIONS = {
     "LENGTH",
     "CONCAT",
     "SUBSTRING",
-    # Fechas
+    # Dates
     "DATE_TRUNC",
     "EXTRACT",
     "DATE_PART",
@@ -69,13 +69,13 @@ ALLOWED_FUNCTIONS = {
     "NOW",
     "CURRENT_DATE",
     "CURRENT_TIMESTAMP",
-    # Condicionales
+    # Conditionals
     "COALESCE",
     "NULLIF",
     "CASE",
     "GREATEST",
     "LEAST",
-    # Matemáticas
+    # Math
     "ROUND",
     "ABS",
     "CEIL",
@@ -88,7 +88,7 @@ ALLOWED_FUNCTIONS = {
     "TO_TIMESTAMP",
 }
 
-# Expresiones explícitamente prohibidas (AST)
+# Explicitly forbidden expressions (AST)
 DANGEROUS_EXPRESSION_TYPES = (
     exp.Insert,
     exp.Update,
@@ -98,34 +98,34 @@ DANGEROUS_EXPRESSION_TYPES = (
     exp.Drop,
     exp.Grant,
     exp.Revoke,
-    exp.Command,  # cubre COPY/SET/SHOW/etc.
+    exp.Command,  # covers COPY/SET/SHOW/etc.
 )
 
 
 class SQLValidator:
-    """Validador SQL con whitelist estricto y detección de comandos peligrosos."""
+    """SQL Validator with strict whitelist and dangerous command detection."""
 
     def __init__(self, schema: DatabaseSchema):
         """
-        Inicializa el validador con un schema.
+        Initializes the validator with a schema.
 
         Args:
-            schema: DatabaseSchema con las tablas y columnas permitidas
+            schema: DatabaseSchema with allowed tables and columns
         """
         self.schema = schema
 
     def validate_query(self, sql: str) -> None:
         """
-        Valida una query SQL completa (solo SELECT/CTE/UNION) usando sqlglot AST.
+        Validates a full SQL query (only SELECT/CTE/UNION) using sqlglot AST.
 
         Args:
-            sql: Query SQL a validar
+            sql: SQL query to validate
 
         Raises:
-            DangerousCommandError: Si se detecta un comando peligroso
-            InvalidTableError: Si se usa una tabla no permitida
-            InvalidColumnError: Si se usa una columna no permitida
-            SQLValidationError: Para otros errores de validación
+            DangerousCommandError: If a dangerous command is detected
+            InvalidTableError: If an unauthorized table is used
+            InvalidColumnError: If an unauthorized column is used
+            SQLValidationError: For other validation errors
         """
         if not sql or not sql.strip():
             raise SQLValidationError("Query SQL vacía o inválida")
@@ -148,7 +148,7 @@ class SQLValidator:
     # ---------------------- helpers ---------------------- #
     def _normalize_sql(self, sql: str) -> str:
         """
-        Limpia comentarios y tolera un ';' final, pero bloquea múltiples statements.
+        Cleans comments and tolerates a trailing ';', but blocks multiple statements.
         """
         if re.search(r"--|/\*", sql):
             raise SQLValidationError("No se permiten comentarios en la query")
@@ -172,16 +172,16 @@ class SQLValidator:
         return isinstance(expression, (exp.Select, exp.Union, exp.With, exp.Subquery))
 
     def _validate_expression(self, expression: exp.Expression) -> None:
-        # Rechazar comandos explícitos peligrosos por tipo AST
+        # Reject explicit dangerous commands by AST type
         for node in expression.walk():
             if isinstance(node, DANGEROUS_EXPRESSION_TYPES):
                 raise DangerousCommandError(node.key.upper(), str(node))
 
-        # Solo se permiten SELECT/CTE/UNION
+        # Only SELECT/CTE/UNION are allowed
         if not self._is_select_like(expression):
             raise DangerousCommandError(expression.key.upper(), str(expression))
 
-        # Validar CTEs recursivamente
+        # Validate CTEs recursively
         cte_names: Set[str] = set()
         for cte in expression.find_all(exp.CTE):
             if cte.alias:
@@ -189,14 +189,14 @@ class SQLValidator:
             if cte.this:
                 self._validate_expression(cte.this)
 
-        # Construir mapa alias->tabla real (solo tablas reales, no CTEs)
+        # Build alias->real table map (only real tables, not CTEs)
         alias_map = self._build_table_alias_map(expression)
         alias_names = {alias.alias for alias in expression.find_all(exp.Alias) if alias.alias}
-        # Validar tablas (incluye FROM/JOIN y subqueries)
+        # Validate tables (includes FROM/JOIN and subqueries)
         self._validate_tables_and_aliases(expression, cte_names)
-        # Validar funciones
+        # Validate functions
         self._validate_functions(expression)
-        # Validar columnas
+        # Validate columns
         self._validate_columns(expression, alias_map, cte_names, alias_names)
 
     def _build_table_alias_map(self, expression: exp.Expression) -> Dict[str, str]:
@@ -214,7 +214,7 @@ class SQLValidator:
             table_name = table.name
             if not table_name:
                 continue
-            # CTEs se consideran permitidos (se validan aparte)
+            # CTEs are considered allowed (validated separately)
             if table_name in cte_names:
                 continue
             if table_name.upper() in DANGEROUS_COMMANDS:
@@ -228,7 +228,7 @@ class SQLValidator:
             func_name = func.name
             if not func_name:
                 continue
-            # Saltar literales numéricos u otros tokens no-función
+            # Skip numeric literals or other non-function tokens
             if func_name.isdigit():
                 continue
             if func_name == "*":
@@ -255,10 +255,10 @@ class SQLValidator:
 
             table_ref = column.table
             if table_ref:
-                # Resolver alias -> tabla real
+                # Resolve alias -> real table
                 real_table = alias_map.get(table_ref, table_ref)
                 if real_table in cte_names:
-                    # No podemos validar columnas de CTE sin esquema; permitir
+                    # Cannot validate CTE columns without schema; allow
                     continue
                 if not self.schema.validate_table(real_table):
                     allowed_tables = self.schema.get_allowed_tables()
@@ -267,7 +267,7 @@ class SQLValidator:
                     allowed_columns = self.schema.get_allowed_columns(real_table)
                     raise InvalidColumnError(column_name, real_table, allowed_columns)
             else:
-                # Sin tabla: validar contra todas las tablas del schema
+                # No table: validate against all schema tables
                 found = False
                 for schema_table_name in self.schema.tables.keys():
                     if self.schema.validate_column(schema_table_name, column_name):
@@ -279,10 +279,10 @@ class SQLValidator:
                         all_columns.extend([col.name for col in schema_table.columns])
                     raise InvalidColumnError(column_name, "", all_columns)
 
-    # --------- compatibilidad con tests existentes --------- #
+    # --------- compatibility with existing tests --------- #
     def extract_tables(self, sql: str | exp.Expression) -> list[str]:
         """
-        Extrae nombres de tablas usando sqlglot (solo tablas reales; CTEs incluidas).
+        Extracts table names using sqlglot (only real tables; CTEs included).
         """
         expression: exp.Expression
         if isinstance(sql, exp.Expression):
@@ -301,7 +301,7 @@ class SQLValidator:
 
     def is_dangerous_command(self, sql: str) -> bool:
         """
-        Detecta si el SQL contiene un comando peligroso.
+        Detects if the SQL contains a dangerous command.
         """
         try:
             parsed = sqlglot.parse(sql, read="postgres")
@@ -315,7 +315,7 @@ class SQLValidator:
         for node in expr.walk():
             if isinstance(node, DANGEROUS_EXPRESSION_TYPES):
                 return True
-            # También revisar palabras clave explícitas
+            # Also check explicit keywords
             if isinstance(node, exp.Identifier) and node.name.upper() in DANGEROUS_COMMANDS:
                 return True
         return False

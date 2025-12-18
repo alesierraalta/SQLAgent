@@ -1,8 +1,5 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
-
 import { Terminal, AnimatedSpan } from "@/components/magicui/terminal";
 import { BentoGrid } from "@/components/magicui/bento-grid";
 import { DotPattern } from "@/components/magicui/dot-pattern";
@@ -10,134 +7,24 @@ import { TerminalSkeleton } from "@/components/skeletons/terminal-skeleton";
 import { TableSkeleton } from "@/components/skeletons/table-skeleton";
 import { QueryResultTable } from "@/components/query-result-table";
 import { ChatInput } from "@/components/chat-input";
-import { queryApi, type QueryResponse } from "@/lib/api";
-import { startQueryStream } from "@/lib/sse";
 import { useSettingsStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { CopyButton } from "@/components/magicui/copy-button";
+import { useChatQuery } from "@/hooks/use-chat-query";
 
 export default function Page() {
   const settings = useSettingsStore();
   
-  const [loading, setLoading] = useState(false);
-  const [isExecutingStream, setIsExecutingStream] = useState(false);
-  const [result, setResult] = useState<QueryResponse | null>(null);
-  const [sql, setSql] = useState<string | null>(null);
-  const [logs, setLogs] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  const streamRef = useRef<{ close: () => void } | null>(null);
-
-  const reset = () => {
-    setResult(null);
-    setSql(null);
-    setLogs([]);
-    setError(null);
-  };
-
-  const stopStream = () => {
-    streamRef.current?.close();
-    streamRef.current = null;
-    setLoading(false);
-    setIsExecutingStream(false);
-  };
-
-  const run = async ({ 
-    question, 
-    limit, 
-    explain, 
-    streaming 
-  }: { 
-    question: string; 
-    limit: number | null; 
-    explain: boolean; 
-    streaming: boolean 
-  }) => {
-    reset();
-    // Validation is handled in ChatInput
-
-    setLoading(true);
-    if (streaming) setIsExecutingStream(true);
-
-    try {
-      if (streaming) {
-        streamRef.current = startQueryStream(
-          {
-            question,
-            limit,
-            explain
-          },
-          {
-            onSql: (sqlText) => setSql(sqlText),
-            onAnalysis: (text) => setLogs((prev) => [...prev, text]),
-            onExecution: (text) => setLogs((prev) => [...prev, text]),
-            onError: (err) => {
-              const msg = `${err.message} (fallback a single-shot)`;
-              setError(msg);
-              toast.error("Error en streaming, reintentando...", { description: msg });
-              stopStream();
-              
-              // Fallback
-              void (async () => {
-                setLoading(true);
-                setIsExecutingStream(false); // Fallback is not streaming
-                try {
-                  const response = await queryApi({
-                    question,
-                    limit,
-                    explain,
-                    stream: false
-                  });
-                  setResult(response);
-                  setSql(response.sql_generated ?? sql ?? null);
-                  if (!response.success) {
-                    const errMsg = response.error?.message ?? "Error al ejecutar la query.";
-                    setError(errMsg);
-                    toast.error("Error", { description: errMsg });
-                  }
-                } catch (e) {
-                  const errMsg = e instanceof Error ? e.message : String(e);
-                  setError(errMsg);
-                  toast.error("Error crítico", { description: errMsg });
-                } finally {
-                  setLoading(false);
-                }
-              })();
-            },
-            onDone: (finalResult) => {
-              setResult(finalResult);
-              setSql(finalResult.sql_generated ?? sql ?? null);
-              stopStream();
-            }
-          }
-        );
-        return;
-      }
-
-      const response = await queryApi({
-        question,
-        limit,
-        explain,
-        stream: false
-      });
-
-      setResult(response);
-      setSql(response.sql_generated ?? null);
-      if (!response.success) {
-        const errMsg = response.error?.message ?? "Error al ejecutar la query.";
-        setError(errMsg);
-        toast.error("Error", { description: errMsg });
-      }
-    } catch (e) {
-      const errMsg = e instanceof Error ? e.message : String(e);
-      setError(errMsg);
-      toast.error("Error crítico", { description: errMsg });
-    } finally {
-      if (!streaming) {
-        setLoading(false);
-      }
-    }
-  };
+  const { 
+    result, 
+    loading, 
+    logs, 
+    error, 
+    sql,
+    isExecutingStream, 
+    runQuery, 
+    stopStream 
+  } = useChatQuery();
 
   return (
     <div className="relative min-h-screen w-full space-y-6">
@@ -165,7 +52,7 @@ export default function Page() {
         <BentoGrid className="auto-rows-min grid-cols-1 md:grid-cols-3 md:auto-rows-auto">
           {/* Input Area - Isolated Component */}
           <ChatInput 
-            onRun={run} 
+            onRun={runQuery} 
             loading={loading} 
             onStop={stopStream} 
             isStreaming={isExecutingStream} 

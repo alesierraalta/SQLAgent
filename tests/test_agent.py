@@ -9,10 +9,10 @@ from src.schemas.database_schema import DatabaseSchema
 from tests.conftest import mock_agent, mock_engine, sample_schema
 
 
-@patch("src.agents.sql_agent.create_agent")
-@patch("src.agents.sql_agent.get_chat_model")
-@patch("src.agents.sql_agent.SQLDatabase")
-@patch("src.agents.sql_agent.SQLDatabaseToolkit")
+@patch("src.agents.builder.create_agent")
+@patch("src.agents.builder.get_chat_model")
+@patch("src.agents.builder.SQLDatabase")
+@patch("src.agents.builder.SQLDatabaseToolkit")
 def test_create_sql_agent(mock_toolkit, mock_db, mock_get_chat_model, mock_create_agent, mock_engine, sample_schema):
     """Test: Creación del agente SQL."""
     # Configurar mocks

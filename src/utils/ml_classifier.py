@@ -1,4 +1,4 @@
-"""Clasificador de complejidad de queries mejorado con ML (Fase E)."""
+"""ML-enhanced query complexity classifier (Phase E)."""
 
 import os
 from typing import List, Tuple
@@ -6,7 +6,7 @@ from typing import List, Tuple
 from src.utils.logger import logger
 
 
-# Ejemplos de referencia por categoría
+# Reference examples by category
 SIMPLE_EXAMPLES = [
     "¿Cuántos productos hay?",
     "Total de ventas",
@@ -35,10 +35,10 @@ COMPLEX_EXAMPLES = [
 
 
 class MLQueryClassifier:
-    """Clasificador de complejidad de queries usando embeddings."""
+    """Query complexity classifier using embeddings."""
     
     def __init__(self):
-        """Inicializa el clasificador ML."""
+        """Initializes the ML classifier."""
         self.model = None
         self.simple_embeddings = None
         self.complex_embeddings = None
@@ -46,10 +46,10 @@ class MLQueryClassifier:
     
     def _lazy_init(self) -> bool:
         """
-        Inicializa el modelo de manera lazy (solo cuando se necesita).
+        Lazy initialization of the model (only when needed).
         
         Returns:
-            True si se inicializó correctamente, False si falló
+            True if initialized successfully, False if failed
         """
         if self._initialized:
             return True
@@ -58,13 +58,13 @@ class MLQueryClassifier:
             from sentence_transformers import SentenceTransformer
             import numpy as np
             
-            # Usar modelo ligero y rápido
+            # Use lightweight and fast model
             model_name = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
             logger.info(f"Cargando modelo de embeddings: {model_name}")
             
             self.model = SentenceTransformer(model_name)
             
-            # Generar embeddings de ejemplos de referencia
+            # Generate embeddings for reference examples
             logger.info("Generando embeddings de ejemplos de referencia...")
             self.simple_embeddings = self.model.encode(SIMPLE_EXAMPLES)
             self.complex_embeddings = self.model.encode(COMPLEX_EXAMPLES)
@@ -85,26 +85,26 @@ class MLQueryClassifier:
     
     def classify(self, question: str) -> str:
         """
-        Clasifica la complejidad de una query usando embeddings.
+        Classifies query complexity using embeddings.
         
         Args:
-            question: Pregunta del usuario en lenguaje natural
+            question: User question in natural language
             
         Returns:
-            "simple" o "complex"
+            "simple" or "complex"
         """
         if not self._lazy_init():
-            # Fallback a clasificador basado en keywords
+            # Fallback to keyword-based classifier
             return None
         
         try:
             import numpy as np
             from scipy.spatial.distance import cosine
             
-            # Generar embedding de la pregunta
+            # Generate question embedding
             question_embedding = self.model.encode([question])[0]
             
-            # Calcular similitud con ejemplos simples
+            # Calculate similarity with simple examples
             simple_similarities = [
                 1 - cosine(question_embedding, ref_embedding)
                 for ref_embedding in self.simple_embeddings
@@ -112,7 +112,7 @@ class MLQueryClassifier:
             avg_simple_similarity = np.mean(simple_similarities)
             max_simple_similarity = np.max(simple_similarities)
             
-            # Calcular similitud con ejemplos complejos
+            # Calculate similarity with complex examples
             complex_similarities = [
                 1 - cosine(question_embedding, ref_embedding)
                 for ref_embedding in self.complex_embeddings
@@ -120,12 +120,12 @@ class MLQueryClassifier:
             avg_complex_similarity = np.mean(complex_similarities)
             max_complex_similarity = np.max(complex_similarities)
             
-            # Decisión basada en similitudes
-            # Usar tanto promedio como máximo para mejor precisión
+            # Decision based on similarities
+            # Use both mean and max for better accuracy
             simple_score = (avg_simple_similarity * 0.6) + (max_simple_similarity * 0.4)
             complex_score = (avg_complex_similarity * 0.6) + (max_complex_similarity * 0.4)
             
-            # Umbral de confianza
+            # Confidence threshold
             confidence_threshold = 0.05
             
             if simple_score > complex_score + confidence_threshold:
@@ -139,7 +139,7 @@ class MLQueryClassifier:
                 )
                 return "complex"
             else:
-                # Muy cercano, usar keywords como tiebreaker
+                # Too close, use keyword tiebreaker
                 logger.debug(
                     f"ML Classification: inconclusive (scores: {simple_score:.3f} vs {complex_score:.3f}), "
                     "using keyword fallback"
@@ -151,13 +151,13 @@ class MLQueryClassifier:
             return None
 
 
-# Instancia global del clasificador (singleton con lazy init)
+# Global classifier instance (singleton with lazy init)
 _ml_classifier: MLQueryClassifier = None
 
 
 def get_ml_classifier() -> MLQueryClassifier:
     """
-    Obtiene la instancia global del clasificador ML.
+    Gets the global instance of the ML classifier.
     
     Returns:
         MLQueryClassifier singleton
@@ -170,19 +170,19 @@ def get_ml_classifier() -> MLQueryClassifier:
 
 def classify_query_complexity_ml(question: str) -> str:
     """
-    Clasifica la complejidad de una query usando ML + keywords (híbrido).
+    Classifies query complexity using ML + keywords (hybrid).
     
-    Estrategia:
-    1. Intentar clasificación con ML (embeddings)
-    2. Si ML no está disponible o no es concluyente, usar keywords
+    Strategy:
+    1. Attempt classification with ML (embeddings)
+    2. If ML is unavailable or inconclusive, use keywords
     
     Args:
-        question: Pregunta del usuario en lenguaje natural
+        question: User question in natural language
         
     Returns:
-        "simple" o "complex"
+        "simple" or "complex"
     """
-    # Verificar si ML está habilitado
+    # Check if ML is enabled
     use_ml = os.getenv("USE_ML_CLASSIFICATION", "true").lower() in ("true", "1", "yes")
     
     if use_ml:
@@ -194,25 +194,25 @@ def classify_query_complexity_ml(question: str) -> str:
         
         logger.debug("ML classification inconclusive, using keyword fallback")
     
-    # Fallback: clasificador basado en keywords (original)
+    # Fallback: keyword-based classifier (original)
     return _classify_with_keywords(question)
 
 
 def _classify_with_keywords(question: str) -> str:
     """
-    Clasificador basado en keywords (fallback).
+    Keyword-based classifier (fallback).
     
     Args:
-        question: Pregunta del usuario
+        question: User question
         
     Returns:
-        "simple" o "complex"
+        "simple" or "complex"
     """
     question_lower = question.lower()
     words = question_lower.split()
     word_count = len(words)
     
-    # Keywords que indican queries complejas
+    # Keywords indicating complex queries
     complex_keywords = [
         "join", "inner join", "left join", "right join", "full join",
         "subquery", "sub-query", "with", "cte", "common table expression",
@@ -228,25 +228,25 @@ def _classify_with_keywords(question: str) -> str:
     if has_complex_keywords:
         return "complex"
     
-    # Keywords básicos que indican queries simples
+    # Basic keywords indicating simple queries
     simple_keywords = [
         "total", "count", "sum", "list", "show", 
         "cuántos", "cuántas", "promedio", "avg"
     ]
     has_simple_keywords = any(keyword in question_lower for keyword in simple_keywords)
     
-    # Si tiene "por" pero también tiene keywords simples y es corta, es simple GROUP BY
+    # If it has 'por' (by) but also simple keywords and is short, it is a simple GROUP BY
     has_por = "por" in question_lower
     if has_por and has_simple_keywords and word_count <= 12:
         return "simple"
     
-    # Si solo tiene keywords simples y es corta, es simple
+    # If it only has simple keywords and is short, it is simple
     if has_simple_keywords and word_count <= 10:
         return "simple"
     
-    # Si es muy corta (<=6 palabras) y tiene keywords simples, es simple
+    # If it is very short (<=6 words) and has simple keywords, it is simple
     if word_count <= 6 and has_simple_keywords:
         return "simple"
     
-    # Por defecto, asumir compleja para seguridad
+    # Default to complex for safety
     return "complex"

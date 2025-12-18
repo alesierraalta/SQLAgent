@@ -14,7 +14,7 @@ from src.agents.sql_agent import execute_query
 def test_execute_query_semantic_cache_latency(monkeypatch):
     """Cache semántico debe responder en <50ms sin tocar el agente."""
     os.environ["ENABLE_SEMANTIC_CACHE"] = "true"
-    monkeypatch.setattr(sql_agent, "get_semantic_cached_result", lambda q: ("cached-result", "SELECT 1"))
+    monkeypatch.setattr("src.agents.executor.get_semantic_cached_result", lambda q: ("cached-result", "SELECT 1"))
 
     t0 = time.perf_counter()
     result = execute_query(agent=None, question="ping", return_metadata=True, stream=False)
@@ -48,8 +48,8 @@ class DummyAgent:
 @pytest.mark.perf
 def test_execute_query_agent_latency_budget(monkeypatch):
     """Ruta normal con agente mock debe responder en <200ms."""
-    monkeypatch.setattr(sql_agent, "get_semantic_cached_result", lambda q: None)
-    monkeypatch.setattr(sql_agent, "get_cached_result", lambda sql: None)
+    monkeypatch.setattr("src.agents.executor.get_semantic_cached_result", lambda q: None)
+    monkeypatch.setattr("src.agents.tools.get_cached_result", lambda sql: None)
 
     t0 = time.perf_counter()
     result = execute_query(agent=DummyAgent(), question="simple question", return_metadata=True, stream=False)

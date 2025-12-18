@@ -3,6 +3,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict
 
+from src.utils.logger import logger
+
 # Define the default configuration
 DEFAULT_CONFIG = {
     "simple_mode": False,
@@ -12,7 +14,15 @@ DEFAULT_CONFIG = {
     "show_visualization": True, # Added based on PRD
 }
 
-CONFIG_DIR = Path.home() / ".llm-dw"
+# Use env var for config dir or default to project-relative data/config
+# This is better for containers and avoids permission issues with Path.home()
+env_config_dir = os.getenv("APP_CONFIG_DIR")
+if env_config_dir:
+    CONFIG_DIR = Path(env_config_dir)
+else:
+    # Fallback to local data/config in current working directory
+    CONFIG_DIR = Path.cwd() / "data" / "config"
+
 CONFIG_FILE_PATH = CONFIG_DIR / "config.json"
 
 
@@ -35,7 +45,7 @@ def load_config() -> Dict[str, Any]:
                 # and new keys are added automatically
                 return {**DEFAULT_CONFIG, **config}
         except json.JSONDecodeError:
-            print(f"Warning: Invalid config file at {CONFIG_FILE_PATH}. Using default configuration.")
+            logger.warning(f"Invalid config file at {CONFIG_FILE_PATH}. Using default configuration.")
             return DEFAULT_CONFIG.copy()
     return DEFAULT_CONFIG.copy()
 
@@ -49,7 +59,7 @@ def save_config(key: str, value: Any):
     config[key] = value
     with open(CONFIG_FILE_PATH, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
-    print(f"Configuration '{key}' updated to '{value}'.")
+    logger.info(f"Configuration '{key}' updated to '{value}'.")
 
 def get_config_value(key: str) -> Any:
     """

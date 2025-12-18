@@ -6,6 +6,9 @@ import ast
 import re
 from typing import Any
 
+import sqlglot
+from sqlglot import exp
+
 from src.agents.query_explainer import explain_query
 from src.agents.sql_agent import create_sql_agent, execute_query
 from src.api.models import APIError, QueryRequest, QueryResponse
@@ -13,95 +16,46 @@ from src.schemas.database_schema import load_schema
 from src.utils.database import get_db_engine
 from src.utils.history import save_query
 from src.utils.logger import logger
+from src.utils.semantic_cache import initialize_semantic_cache
 
 
 def _extract_column_names_from_sql(sql: str | None, num_cols: int) -> list[str] | None:
-    """Extrae nombres de columnas del SELECT (best-effort)."""
+    """Extrae nombres de columnas del SELECT (best-effort) usando sqlglot."""
     if not sql:
         return None
 
-    sql_clean = sql.strip()
-    if not sql_clean:
-        return None
-
     try:
-        sql_clean = re.sub(r"--.*?$", "", sql_clean, flags=re.MULTILINE)
-        sql_clean = re.sub(r"/\\*.*?\\*/", "", sql_clean, flags=re.DOTALL)
-        sql_clean = " ".join(sql_clean.split())
-
-        select_match = re.search(r"SELECT\\s+(.+?)\\s+FROM", sql_clean, re.DOTALL | re.IGNORECASE)
-        if not select_match:
-            return None
-
-        select_clause = select_match.group(1).strip()
-
-        columns: list[str] = []
-        current_col = ""
-        paren_depth = 0
-        in_quotes = False
-        quote_char: str | None = None
-
-        for char in select_clause:
-            if char in ("'", '"') and not in_quotes:
-                in_quotes = True
-                quote_char = char
-                current_col += char
-                continue
-
-            if quote_char is not None and char == quote_char and in_quotes:
-                in_quotes = False
-                quote_char = None
-                current_col += char
-                continue
-
-            if in_quotes:
-                current_col += char
-                continue
-
-            if char == "(":
-                paren_depth += 1
-                current_col += char
-                continue
-
-            if char == ")":
-                paren_depth -= 1
-                current_col += char
-                continue
-
-            if char == "," and paren_depth == 0:
-                if current_col.strip():
-                    columns.append(current_col.strip())
-                current_col = ""
-                continue
-
-            current_col += char
-
-        if current_col.strip():
-            columns.append(current_col.strip())
-
-        headers: list[str] = []
-        for col in columns[:num_cols]:
-            col_clean = col.strip()
-
-            as_match = re.search(
-                r"\\bAS\\s+[\"\\']?([a-zA-Z_][a-zA-Z0-9_]*)[\"\\']?",
-                col_clean,
-                re.IGNORECASE,
-            )
-            if as_match:
-                headers.append(as_match.group(1))
-                continue
-
-            col_name_match = re.search(r"(?:[a-zA-Z_]+\\.)?([a-zA-Z_][a-zA-Z0-9_]*)", col_clean)
-            if col_name_match:
-                headers.append(col_name_match.group(1))
-            else:
-                headers.append(f"col_{len(headers) + 1}")
-
-        return headers if len(headers) == num_cols else None
-
+        expression = sqlglot.parse_one(sql, read="postgres")
     except Exception:
         return None
+
+    if not isinstance(expression, exp.Select):
+        return None
+
+    headers: list[str] = []
+    for select_item in expression.expressions:
+        if isinstance(select_item, exp.Alias):
+            headers.append(select_item.alias_or_name)
+        elif isinstance(select_item, exp.Column):
+            headers.append(select_item.name)
+        elif isinstance(select_item, exp.Cast): # Handle CAST(col as type)
+            if isinstance(select_item.this, exp.Column):
+                headers.append(select_item.this.name)
+            else:
+                # Fallback for complex expressions in CAST
+                headers.append(select_item.sqlgen())
+        elif hasattr(select_item, 'name'): # For functions, etc.
+            headers.append(select_item.name)
+        else:
+            headers.append(select_item.sqlgen()) # Fallback for complex expressions
+
+        if len(headers) == num_cols:
+            break
+
+    # Clean up headers (remove quotes from column names if present)
+    cleaned_headers = [re.sub(r'^"|"$', '', h).strip() for h in headers]
+
+    return cleaned_headers if len(cleaned_headers) == num_cols else None
 
 
 def _parse_rows_from_response(
@@ -245,10 +199,17 @@ def run_query(request: QueryRequest) -> QueryResponse:
             ),
         )
 
+    # Pre-cargar embeddings (semantic cache) como en el CLI, para evitar cold-start en la primera query.
+    try:
+        initialize_semantic_cache()
+    except Exception as e:
+        logger.debug(f"No se pudo pre-cargar modelo de embeddings: {e}")
+
     schema = load_schema()
     engine = get_db_engine()
 
-    agent = create_sql_agent(engine, schema, question=question)
+    # Igual que el CLI: crear agente sin pasar `question` para evitar inicializar el clasificador ML en cada query.
+    agent = create_sql_agent(engine, schema)
 
     result = execute_query(agent, question, return_metadata=True, stream=False)
     return _build_query_response(
@@ -275,10 +236,16 @@ def run_query_stream(
             error=APIError(code="invalid_question", message="La pregunta no puede estar vacía."),
         )
 
+    # Pre-cargar embeddings (semantic cache) como en el CLI, para evitar cold-start en la primera query.
+    try:
+        initialize_semantic_cache()
+    except Exception as e:
+        logger.debug(f"No se pudo pre-cargar modelo de embeddings: {e}")
+
     schema = load_schema()
     engine = get_db_engine()
 
-    agent = create_sql_agent(engine, schema, question=question_clean)
+    agent = create_sql_agent(engine, schema)
     result = execute_query(
         agent,
         question_clean,

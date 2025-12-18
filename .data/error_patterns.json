@@ -1,0 +1,12 @@
+{
+  "fb86fceecd6fd61b4459633826b2d166": {
+    "error_hash": "fb86fceecd6fd61b4459633826b2d166",
+    "original_sql": "SELECT bad FROM sales",
+    "error_message": "column does not exist",
+    "error_type": "COLUMN_NOT_FOUND",
+    "corrected_sql": "SELECT id FROM sales",
+    "success_count": 5,
+    "first_seen": "2025-12-16T18:07:55.361455",
+    "last_used": "2025-12-18T10:57:30.488543"
+  }
+}

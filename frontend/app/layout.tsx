@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Toaster } from "sonner";
 
 import "./globals.css";
 
@@ -21,6 +22,7 @@ export default function RootLayout({
           <Navbar />
           <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
         </div>
+        <Toaster theme="dark" position="bottom-right" />
       </body>
     </html>
   );

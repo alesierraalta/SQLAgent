@@ -66,3 +66,5 @@ logs/
 # Temporary files
 *.tmp
 *.temp
+test_output.txt
+=*
